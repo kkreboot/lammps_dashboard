@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """LAMMPS Dashboard — Flask/SocketIO web backend (full feature parity with desktop GUI)."""
 
-import os, re, signal, threading, subprocess, json, time
+import os, re, signal, threading, subprocess, json, time, select, struct
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
@@ -15,6 +15,9 @@ _state = {"process": None, "running": False, "working_dir": os.path.expanduser("
 _ai_stop   = threading.Event()
 _pull_stop = threading.Event()
 _ai_history: list = []
+
+# ── Terminal state ────────────────────────────────────────────────────────────
+_term = {"active": False, "master": None, "proc": None, "channel": None}
 
 # ── SSH ───────────────────────────────────────────────────────────────────────
 try:
@@ -723,6 +726,142 @@ def on_ai_pull(data):
 @socketio.on("pull_stop")
 def on_pull_stop(data):
     _pull_stop.set()
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Terminal (PTY)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _term_kill():
+    """Tear down any active terminal session."""
+    _term["active"] = False
+    ch = _term.pop("channel", None)
+    if ch:
+        try: ch.close()
+        except Exception: pass
+    proc = _term.pop("proc", None)
+    if proc:
+        try: proc.terminate()
+        except Exception: pass
+    master = _term.pop("master", None)
+    if master is not None:
+        try: os.close(master)
+        except Exception: pass
+    _term.update({"active": False, "master": None, "proc": None, "channel": None})
+
+
+@socketio.on("term_start")
+def on_term_start(data):
+    rows = int(data.get("rows", 24))
+    cols = int(data.get("cols", 80))
+    remote = data.get("remote", False)
+    cwd    = data.get("cwd", "") or _state["working_dir"] or os.path.expanduser("~")
+
+    _term_kill()
+
+    if remote and HAS_SSH and _ssh and _ssh.connected:
+        try:
+            chan = _ssh._client.invoke_shell(term="xterm-256color", width=cols, height=rows)
+            _term["channel"] = chan
+            _term["active"]  = True
+
+            def _relay_ssh():
+                while _term["active"]:
+                    try:
+                        r, _, _ = select.select([chan], [], [], 0.05)
+                        if r:
+                            chunk = chan.recv(4096)
+                            if not chunk:
+                                break
+                            socketio.emit("term_output", {"data": chunk.decode("utf-8", errors="replace")})
+                    except Exception:
+                        break
+                _term["active"] = False
+                socketio.emit("term_exit", {})
+
+            threading.Thread(target=_relay_ssh, daemon=True).start()
+            # cd to working dir on remote
+            time.sleep(0.3)
+            if cwd and cwd != "/":
+                chan.sendall(f"cd {cwd}\n".encode())
+            emit("term_ready", {"remote": True})
+        except Exception as exc:
+            emit("term_error", {"message": str(exc)})
+    else:
+        try:
+            import pty, fcntl, termios
+            master, slave = pty.openpty()
+            # set initial window size
+            fcntl.ioctl(slave, termios.TIOCSWINSZ,
+                        struct.pack("HHHH", rows, cols, 0, 0))
+            env = {**os.environ, "TERM": "xterm-256color"}
+            env.pop("DISPLAY", None)
+            proc = subprocess.Popen(
+                [os.environ.get("SHELL", "/bin/bash")],
+                stdin=slave, stdout=slave, stderr=slave,
+                cwd=cwd, close_fds=True, env=env,
+            )
+            os.close(slave)
+            _term["proc"]   = proc
+            _term["master"] = master
+            _term["active"] = True
+
+            def _relay_local():
+                while _term["active"]:
+                    try:
+                        r, _, _ = select.select([master], [], [], 0.05)
+                        if r:
+                            chunk = os.read(master, 4096)
+                            if not chunk:
+                                break
+                            socketio.emit("term_output", {"data": chunk.decode("utf-8", errors="replace")})
+                    except OSError:
+                        break
+                _term["active"] = False
+                socketio.emit("term_exit", {})
+
+            threading.Thread(target=_relay_local, daemon=True).start()
+            emit("term_ready", {"remote": False})
+        except Exception as exc:
+            emit("term_error", {"message": str(exc)})
+
+
+@socketio.on("term_input")
+def on_term_input(data):
+    text = data.get("data", "")
+    if not text:
+        return
+    raw = text.encode("utf-8")
+    chan = _term.get("channel")
+    if chan:
+        try: chan.sendall(raw)
+        except Exception: pass
+    elif _term.get("master") is not None:
+        try: os.write(_term["master"], raw)
+        except OSError: pass
+
+
+@socketio.on("term_resize")
+def on_term_resize(data):
+    rows = int(data.get("rows", 24))
+    cols = int(data.get("cols", 80))
+    chan = _term.get("channel")
+    if chan:
+        try: chan.resize_pty(width=cols, height=rows)
+        except Exception: pass
+    master = _term.get("master")
+    if master is not None:
+        try:
+            import fcntl, termios
+            fcntl.ioctl(master, termios.TIOCSWINSZ,
+                        struct.pack("HHHH", rows, cols, 0, 0))
+        except Exception: pass
+
+
+@socketio.on("term_stop")
+def on_term_stop(data):
+    _term_kill()
+    emit("term_exit", {})
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Main

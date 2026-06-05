@@ -28,6 +28,7 @@
     <button class="tab-btn" data-tab="ssh">🔌 SSH</button>
     <button class="tab-btn" data-tab="hpc">🖥 HPC</button>
     <button class="tab-btn" data-tab="ai">🤖 AI</button>
+    <button class="tab-btn" data-tab="term">⬛ Terminal</button>
   </nav>
   <div id="conn-badge" class="badge badge-off">⬤ Local</div>
 </header>
@@ -339,6 +340,25 @@
   </div>
 </section>
 
+<!-- ══════════ TERMINAL ══════════ -->
+<section id="tab-term" class="tab-panel hidden">
+  <div class="term-layout">
+    <div class="term-toolbar">
+      <span id="term-status" class="status-label">● Disconnected</span>
+      <div class="sep"></div>
+      <label class="chk-label">
+        <input id="term-remote-chk" type="checkbox"/>
+        SSH remote
+      </label>
+      <button id="btn-term-connect" class="btn-green">⬛ Open Terminal</button>
+      <button id="btn-term-disconnect" class="btn-red" disabled>✕ Close</button>
+      <div style="flex:1"></div>
+      <button id="btn-term-clear" class="btn-small">Clear</button>
+    </div>
+    <div id="terminal-container" class="terminal-container"></div>
+  </div>
+</section>
+
 </main>
 
 <!-- Save As dialog -->
@@ -388,6 +408,9 @@
   </div>
 </div>
 
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css"/>
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.1/socket.io.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/mode/simple.min.js"></script>

@@ -323,6 +323,7 @@ document.getElementById('btn-run').addEventListener('click', async () => {
   if (d.error) { alert(d.error); return; }
   setRunning(true);
   if (d.working_dir) {
+    _state_wd = d.working_dir;
     document.getElementById('plot-log-path').value = d.working_dir.replace(/\/$/, '') + '/log.lammps';
   }
 });
@@ -616,6 +617,7 @@ document.getElementById('btn-ssh-connect').addEventListener('click', async () =>
     `Host:    ${body.host}\nUser:    ${body.username}\nHome:    ${d.home || '?'}`;
   loadSshProfiles(); updateRunTargetBar();
   if (d.home) loadDir(d.home, true);
+  document.getElementById('term-remote-chk').checked = true;
   // Auto-detect HPC features
   autoDetectHpc(body.host);
 });
@@ -631,6 +633,7 @@ document.getElementById('btn-ssh-disconnect').addEventListener('click', async ()
   document.getElementById('conn-badge').textContent = '⬤ Local';
   document.getElementById('conn-badge').className = 'badge badge-off';
   document.getElementById('ssh-info-body').textContent = 'Connect to a server to see details.';
+  document.getElementById('term-remote-chk').checked = false;
   updateRunTargetBar();
 });
 
@@ -1139,6 +1142,101 @@ socket.on('pull_done', d => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Terminal tab
+// ═══════════════════════════════════════════════════════════════════════════
+let _term = null;
+let _termFit = null;
+
+function termSetStatus(msg, color) {
+  const el = document.getElementById('term-status');
+  el.textContent = msg; el.style.color = color;
+}
+
+function termOpen() {
+  const container = document.getElementById('terminal-container');
+  if (!_term) {
+    _term = new Terminal({
+      theme: { background: '#0d1117', foreground: '#c9d1d9', cursor: '#58a6ff',
+               selectionBackground: '#1f3a5a', black:'#0d1117', brightBlack:'#8b949e',
+               red:'#ff7b72', brightRed:'#ffa198', green:'#3fb950', brightGreen:'#56d364',
+               yellow:'#d29922', brightYellow:'#e3b341', blue:'#58a6ff', brightBlue:'#79c0ff',
+               magenta:'#bc8cff', brightMagenta:'#d2a8ff', cyan:'#39c5cf', brightCyan:'#56d4dd',
+               white:'#b1bac4', brightWhite:'#f0f6fc' },
+      fontFamily: "'Fira Code','Cascadia Code','Consolas',monospace",
+      fontSize: 13, lineHeight: 1.3, cursorBlink: true, scrollback: 5000,
+    });
+    _termFit = new FitAddon.FitAddon();
+    _term.loadAddon(_termFit);
+    _term.open(container);
+    _term.onData(d => socket.emit('term_input', { data: d }));
+  }
+  // fit to container
+  setTimeout(() => {
+    _termFit.fit();
+    const { rows, cols } = _term;
+    const remote = document.getElementById('term-remote-chk').checked;
+    const cwd    = _state_wd || '';
+    socket.emit('term_start', { rows, cols, remote, cwd });
+    termSetStatus('● Connecting…', 'var(--yellow)');
+    document.getElementById('btn-term-connect').disabled    = true;
+    document.getElementById('btn-term-disconnect').disabled = false;
+  }, 50);
+}
+
+let _state_wd = '';  // updated from /api/status
+
+document.getElementById('btn-term-connect').addEventListener('click', termOpen);
+document.getElementById('btn-term-disconnect').addEventListener('click', () => {
+  socket.emit('term_stop', {});
+});
+document.getElementById('btn-term-clear').addEventListener('click', () => {
+  if (_term) _term.clear();
+});
+
+// auto-open terminal when tab is switched
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  if (btn.dataset.tab === 'term') {
+    btn.addEventListener('click', () => {
+      // slight delay so the tab panel is visible before fit()
+      setTimeout(() => {
+        if (_term && _termFit) _termFit.fit();
+      }, 80);
+    });
+  }
+});
+
+// resize observer so terminal fits when panel changes size
+(function() {
+  const container = document.getElementById('terminal-container');
+  if (!container || !window.ResizeObserver) return;
+  new ResizeObserver(() => {
+    if (_term && _termFit) {
+      _termFit.fit();
+      socket.emit('term_resize', { rows: _term.rows, cols: _term.cols });
+    }
+  }).observe(container);
+})();
+
+socket.on('term_ready', d => {
+  const label = d.remote ? '● SSH shell' : '● Local shell';
+  termSetStatus(label, 'var(--green)');
+  if (_term) _term.focus();
+});
+socket.on('term_output', d => { if (_term) _term.write(d.data); });
+socket.on('term_exit', () => {
+  termSetStatus('● Disconnected', 'var(--fg2)');
+  document.getElementById('btn-term-connect').disabled    = false;
+  document.getElementById('btn-term-disconnect').disabled = true;
+  if (_term) _term.writeln('\r\n\x1b[33m[Terminal closed]\x1b[0m');
+});
+socket.on('term_error', d => {
+  termSetStatus('● Error', 'var(--red)');
+  document.getElementById('btn-term-connect').disabled    = false;
+  document.getElementById('btn-term-disconnect').disabled = true;
+  if (_term) _term.writeln('\r\n\x1b[31m[Error: ' + d.message + ']\x1b[0m');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════════════════════════════════════
 function esc(s) {
@@ -1175,6 +1273,7 @@ function toast(msg, ms = 2200) {
   try { initEditor(); } catch (e) { console.error('Editor init failed:', e); }
   const st = await GET('/api/status').catch(() => ({}));
   const wd = st.working_dir || '';
+  _state_wd = wd;
   loadDir(wd || '/home');
   document.getElementById('plot-log-path').value = (wd || '') + '/log.lammps';
   if (wd) document.getElementById('run-dir').value = wd;
