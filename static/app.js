@@ -1083,7 +1083,7 @@ function toast(msg, ms = 2200) {
 // Init
 // ═══════════════════════════════════════════════════════════════════════════
 (async function init() {
-  initEditor();
+  try { initEditor(); } catch (e) { console.error('Editor init failed:', e); }
   const st = await GET('/api/status').catch(() => ({}));
   loadDir(st.working_dir || '/home');
   document.getElementById('plot-log-path').value = (st.working_dir || '') + '/log.lammps';

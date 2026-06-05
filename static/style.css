@@ -43,7 +43,7 @@ main {
   position: fixed; top: var(--hdr); left: 0; right: 0; bottom: 0; overflow: hidden;
 }
 .tab-panel { position: absolute; inset: 0; overflow: hidden; }
-.tab-panel.hidden { display: none; }
+.tab-panel.hidden { display: none !important; }
 
 /* ── Cards ──────────────────────────────────────────────────────────────── */
 .card {
