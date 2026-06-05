@@ -1760,7 +1760,7 @@ class LAMMPSDashboard(QMainWindow):
                                 if h in data:
                                     data[h].append(v)
                     except ValueError:
-                        in_thermo = False
+                        pass  # skip WARNING/info lines mid-thermo block
         return {"headers": headers, "data": data}
 
     # ══════════════════════════════════════════════════════════════════════

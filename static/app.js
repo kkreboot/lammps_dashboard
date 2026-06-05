@@ -1178,6 +1178,10 @@ function toast(msg, ms = 2200) {
   loadDir(wd || '/home');
   document.getElementById('plot-log-path').value = (wd || '') + '/log.lammps';
   if (wd) document.getElementById('run-dir').value = wd;
+  if (st.running) {
+    setRunning(true);
+    appendLog('▶ [simulation already running — reconnected]', 'log-ok');
+  }
 
   // Restore SSH state
   const ss = await GET('/api/ssh/status').catch(() => ({}));
@@ -1190,8 +1194,12 @@ function toast(msg, ms = 2200) {
     document.getElementById('btn-ssh-upload').disabled    = false;
     document.getElementById('btn-ssh-download').disabled  = false;
     setSshStatus(`Connected — ${ss.profile.username}@${ss.profile.host}`, 'var(--green)');
+    document.getElementById('ssh-info-body').textContent =
+      `Host:    ${ss.profile.host}\nUser:    ${ss.profile.username}\nHome:    ${ss.profile.home || '?'}`;
     // Restore remote file tree to home directory
     loadDir(ss.profile.home || '/', true);
+    // Re-run HPC auto-detection so HPC mode toggle is restored
+    autoDetectHpc(ss.profile.host);
   }
 
   updateRunTargetBar();
