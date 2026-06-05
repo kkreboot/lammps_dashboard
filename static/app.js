@@ -29,6 +29,40 @@ const CHART_COLORS = [
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Context menu engine
+// ═══════════════════════════════════════════════════════════════════════════
+function showCtxMenu(x, y, items) {
+  const menu = document.getElementById('ctx-menu');
+  const box  = document.getElementById('ctx-menu-items');
+  box.innerHTML = '';
+  items.forEach(item => {
+    if (!item) {
+      const sep = document.createElement('div');
+      sep.className = 'ctx-sep';
+      box.appendChild(sep);
+      return;
+    }
+    const div = document.createElement('div');
+    div.className = 'ctx-item' + (item.danger ? ' danger' : '');
+    div.innerHTML = `<span class="ctx-icon">${item.icon || ''}</span><span>${esc(item.label)}</span>`;
+    div.addEventListener('click', () => { hideCtxMenu(); item.action(); });
+    box.appendChild(div);
+  });
+  menu.style.left = x + 'px';
+  menu.style.top  = y + 'px';
+  menu.classList.remove('hidden');
+  // Keep inside viewport
+  requestAnimationFrame(() => {
+    const r = menu.getBoundingClientRect();
+    if (r.right  > window.innerWidth)  menu.style.left = (x - r.width)  + 'px';
+    if (r.bottom > window.innerHeight) menu.style.top  = (y - r.height) + 'px';
+  });
+}
+function hideCtxMenu() { document.getElementById('ctx-menu').classList.add('hidden'); }
+document.addEventListener('click',   hideCtxMenu);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') hideCtxMenu(); });
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Tab switching
 // ═══════════════════════════════════════════════════════════════════════════
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -98,8 +132,105 @@ function renderTree(entries, parent, remote) {
         item.classList.add('selected');
       }
     });
+    item.addEventListener('contextmenu', ev => {
+      ev.preventDefault(); ev.stopPropagation();
+      tree.querySelectorAll('.tree-item').forEach(i => i.classList.remove('selected'));
+      item.classList.add('selected');
+      showCtxMenu(ev.clientX, ev.clientY,
+        e.type === 'dir' ? treeCtxDir(e, remote) : treeCtxFile(e, remote));
+    });
     tree.appendChild(item);
   });
+}
+
+// ── File tree context menu helpers ────────────────────────────────────────
+function treeCtxFile(e, remote) {
+  return [
+    { icon: '📄', label: 'Open',          action: () => openFile(e.path, remote) },
+    { icon: '▶',  label: 'Use as Input',  action: () => setAsInput(e.path, remote) },
+    null,
+    { icon: '📋', label: 'Copy Path',
+      action: () => navigator.clipboard.writeText(e.path).then(() => toast('Path copied')) },
+    ...(remote ? [{
+      icon: '⬇', label: 'Download',
+      action: () => { window.location = `/api/ssh/download_file?path=${enc(e.path)}`; }
+    }] : []),
+    null,
+    { icon: '✏',  label: 'Rename', action: () => renameEntry(e.path, e.name, remote) },
+    { icon: '🗑',  label: 'Delete', action: () => deleteEntry(e.path, e.name, remote), danger: true },
+  ];
+}
+
+function treeCtxDir(e, remote) {
+  return [
+    { icon: '📂', label: 'Open',             action: () => loadDir(e.path, remote) },
+    null,
+    { icon: '+F', label: 'New File Here',     action: () => newFileIn(e.path, remote) },
+    { icon: '+D', label: 'New Folder Here',   action: () => newDirIn(e.path, remote) },
+    null,
+    { icon: '✏',  label: 'Rename',  action: () => renameEntry(e.path, e.name, remote) },
+    { icon: '🗑',  label: 'Delete',  action: () => deleteEntry(e.path, e.name, remote), danger: true },
+  ];
+}
+
+function setAsInput(path, remote) {
+  const dir  = path.substring(0, path.lastIndexOf('/')) || '/';
+  const base = path.substring(path.lastIndexOf('/') + 1);
+  document.getElementById('run-input').value = base;
+  document.getElementById('run-dir').value   = dir;
+  if (remote) document.getElementById('run-remote').checked = true;
+  document.querySelector('[data-tab=run]').click();
+  toast('Input set: ' + base);
+}
+
+async function renameEntry(path, name, remote) {
+  const newName = prompt(`Rename "${name}" to:`, name);
+  if (!newName || newName === name) return;
+  const dir     = path.substring(0, path.lastIndexOf('/'));
+  const newPath = dir + '/' + newName;
+  const d = remote
+    ? await POST('/api/ssh/rename', { old_path: path, new_path: newPath })
+    : await POST('/api/rename',     { old_path: path, new_path: newPath });
+  if (d.error) { alert('Rename failed: ' + d.error); return; }
+  if (currentFilePath === path) {
+    currentFilePath = newPath;
+    document.getElementById('editor-filename').textContent = (remote ? '[SSH] ' : '') + newPath;
+  }
+  toast('Renamed → ' + newName);
+  loadDir(currentDir, remote);
+}
+
+async function deleteEntry(path, name, remote) {
+  if (!confirm(`Delete "${name}"?\nThis cannot be undone.`)) return;
+  const d = await fetch(remote ? '/api/ssh/file' : '/api/file', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path }),
+  }).then(r => r.json());
+  if (d.error) { alert('Delete failed: ' + d.error); return; }
+  if (currentFilePath === path) {
+    currentFilePath = ''; currentFileRemote = false;
+    document.getElementById('editor-filename').textContent = 'no file open';
+    editor.setValue('');
+  }
+  toast('Deleted: ' + name);
+  loadDir(currentDir, remote);
+}
+
+async function newFileIn(dir, remote) {
+  const name = prompt('New file name:'); if (!name) return;
+  const path = dir.replace(/\/$/, '') + '/' + name;
+  await POST(remote ? '/api/ssh/file' : '/api/file', { path, content: '' });
+  await loadDir(dir, remote);
+  openFile(path, remote);
+}
+
+async function newDirIn(dir, remote) {
+  const name = prompt('New folder name:'); if (!name) return;
+  const path = dir.replace(/\/$/, '') + '/' + name;
+  const d = await POST(remote ? '/api/ssh/mkdir' : '/api/mkdir', { path });
+  if (d.error) { alert('Failed: ' + d.error); return; }
+  loadDir(dir, remote);
 }
 
 function makeTreeItem(name, icon, cls, onClick) {
@@ -297,6 +428,19 @@ document.getElementById('btn-ssh-download-file').addEventListener('click', () =>
   document.addEventListener('mouseup', () => { drag=false; document.body.style.cursor=''; });
 })();
 
+// Right-click on file tree background
+document.getElementById('file-tree').addEventListener('contextmenu', e => {
+  if (e.target.closest('.tree-item')) return;
+  e.preventDefault();
+  const remote = document.getElementById('path-bar').value.startsWith('[SSH]');
+  showCtxMenu(e.clientX, e.clientY, [
+    { icon: '+F', label: 'New File',   action: () => newFileIn(currentDir, remote) },
+    { icon: '+D', label: 'New Folder', action: () => newDirIn(currentDir, remote) },
+    null,
+    { icon: '⟳',  label: 'Refresh',   action: () => loadDir(currentDir, remote) },
+  ]);
+});
+
 // Drag-and-drop file upload on file tree
 (function() {
   const tree = document.getElementById('file-tree');
@@ -377,6 +521,28 @@ document.getElementById('btn-parse-log').addEventListener('click', async () => {
 document.getElementById('btn-clear-log').addEventListener('click', () => {
   logView.innerHTML = ''; logLineCount = 0;
   document.getElementById('log-count').textContent = '0 lines';
+});
+
+logView.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  showCtxMenu(e.clientX, e.clientY, [
+    { icon: '📋', label: 'Copy All Log',
+      action: () => {
+        const text = [...logView.querySelectorAll('.log-line')].map(el => el.textContent).join('\n');
+        navigator.clipboard.writeText(text).then(() => toast('Log copied'));
+      }
+    },
+    { icon: '💾', label: 'Save Log As…',
+      action: () => {
+        const text = [...logView.querySelectorAll('.log-line')].map(el => el.textContent).join('\n');
+        const a = Object.assign(document.createElement('a'),
+          { href: URL.createObjectURL(new Blob([text], { type: 'text/plain' })), download: 'run_log.txt' });
+        a.click();
+      }
+    },
+    null,
+    { icon: '🗑', label: 'Clear Log', action: () => document.getElementById('btn-clear-log').click(), danger: true },
+  ]);
 });
 
 document.getElementById('btn-browse-input').addEventListener('click', () => {
@@ -1017,6 +1183,21 @@ async function refreshQueue() {
       tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
       tr.classList.add('selected');
       hpcSelectedRow = job;
+    });
+    tr.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('selected'));
+      tr.classList.add('selected');
+      hpcSelectedRow = job;
+      showCtxMenu(e.clientX, e.clientY, [
+        { icon: '📄', label: 'View Output',
+          action: () => document.getElementById('btn-hpc-view-out').click() },
+        { icon: '📋', label: 'Copy Job ID',
+          action: () => navigator.clipboard.writeText(job.id).then(() => toast('Copied: ' + job.id)) },
+        null,
+        { icon: '✕', label: 'Cancel Job',
+          action: () => document.getElementById('btn-hpc-cancel').click(), danger: true },
+      ]);
     });
     tbody.appendChild(tr);
   });

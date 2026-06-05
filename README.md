@@ -12,20 +12,30 @@ A full-featured GUI for running, monitoring, and analysing LAMMPS molecular dyna
 | Feature | Desktop | Browser |
 |---|:---:|:---:|
 | File browser (local + SSH/SFTP) | ✓ | ✓ |
-| Editor with LAMMPS syntax highlighting | ✓ | ✓ |
+| **Right-click context menus** (rename, delete, copy path…) | ✓ | ✓ |
+| Drag-and-drop file upload onto file tree | — | ✓ |
+| Editor with LAMMPS syntax highlighting (CodeMirror) | ✓ | ✓ |
 | "Use as Input" one-click | ✓ | ✓ |
 | Upload / download files (SSH) | ✓ | ✓ |
 | Simulation run / stop (local + SSH remote) | ✓ | ✓ |
 | LAMMPS binary auto-detect | ✓ | ✓ |
 | Live log streaming, line count, colour coding | ✓ | ✓ |
+| **Live thermo plot** — chart updates in real-time during run | — | ✓ |
 | Auto-switch to Plots after run | ✓ | ✓ |
 | Thermo plots — subplot grid or overlay | ✓ | ✓ |
-| Per-column checkboxes for plots | ✓ | ✓ |
+| **Multi-log comparison** — overlay curves from multiple runs | — | ✓ |
+| Per-column checkboxes with colour swatches | ✓ | ✓ |
 | Save plots as PNG | ✓ | ✓ |
+| **Variable sweep** — run same input over a parameter range | — | ✓ |
+| **Run history** — browse & reload past runs | — | ✓ |
+| **Browser notifications** — desktop alert when run finishes | — | ✓ |
+| **Light / dark theme toggle** | — | ✓ |
 | SSH profile manager (password / key auth) | ✓ | ✓ |
-| HPC / SLURM script generation (IITJ style) | ✓ | ✓ |
+| Embedded terminal (local PTY + SSH shell) | — | ✓ |
+| HPC / SLURM script generation | ✓ | ✓ |
 | Partition query (`sinfo`), Singularity detect | ✓ | ✓ |
 | Job queue table with colour-coded status | ✓ | ✓ |
+| **HPC queue auto-refresh** (every 30 s) | — | ✓ |
 | Submit / cancel / view job output | ✓ | ✓ |
 | HPC Mode toggle (routes ▶ → sbatch) | ✓ | ✓ |
 | Auto-detect HPC on SSH connect | ✓ | ✓ |
@@ -82,21 +92,37 @@ Re-running `setup.sh` is safe — it skips already-completed steps.
 - Browse local and SSH/SFTP directories in a resizable split pane
 - CodeMirror editor with LAMMPS keyword/variable syntax highlighting
 - **"▶ Use as Input"** — one click sets the Run tab input and working directory
-- Save, Save As, and when SSH is connected: Upload to remote / Download from remote
+- Save, Save As (with folder picker), and when SSH is connected: Upload / Download
+- **Drag-and-drop** — drop files onto the tree to upload them (local or remote)
+- **Right-click on any file or folder:**
+  | Action | Description |
+  |---|---|
+  | Open | Open in editor |
+  | Use as Input | Set as simulation input |
+  | Copy Path | Copy full path to clipboard |
+  | Download | Browser download (SSH only) |
+  | New File / Folder Here | Create inside that directory |
+  | Rename | Rename in place |
+  | Delete | Permanently remove (with confirmation) |
+- **Right-click on empty tree area:** New File, New Folder, Refresh
 
 ### ▶ Run
 - Set input file, working directory, MPI process count, binary path, extra args
 - **"Detect"** button auto-finds `lmp` binary locally or on SSH remote
 - **"Run on SSH server"** checkbox — routes the run to the connected remote
-- Live log with colour-coded lines (errors in red, warnings in yellow, thermo data in green)
-- Line counter and auto-scroll
-- Auto-switches to Plots tab and parses `log.lammps` when the run finishes
+- Live log with colour-coded lines (errors red, warnings yellow, thermo green)
+- **Right-click log view:** Copy All, Save as .txt, Clear
+- **📋 History** — browse past runs; click any row to restore its settings
+- **⚡ Sweep** — expand the sweep panel, enter a variable name and space-separated values; runs each value sequentially and waits for each run to finish
+- Embedded terminal in the lower half — local bash shell or SSH remote shell
+- **Right-click terminal output** is handled natively by xterm.js (copy selection)
 
 ### 📈 Plots
-- Per-column checkboxes with colour swatches
-- **Grid mode** — separate subplot per column (easier to read dense data)
+- **● Live badge** pulses while a simulation is running; chart updates every 2 s
+- **+ Compare** — load additional `log.lammps` files; all curves appear on the same subplot per column with distinct colours
+- **Grid mode** — separate subplot per column (default)
 - **Overlay mode** — all columns on one chart
-- Load any `log.lammps` manually; remote log loaded automatically after SSH run
+- Remove comparison logs individually with the × button
 - Save each subplot as PNG
 
 ### 🔌 SSH
@@ -107,19 +133,18 @@ Re-running `setup.sh` is safe — it skips already-completed steps.
 - Connecting auto-populates the file browser with the remote home directory
 
 ### 🖥 HPC
-- Generates SLURM batch scripts matching IITJ HPC style:
+- Generates SLURM batch scripts:
   - Singularity container execution (`--no-home`, `--bind`, `--pwd`)
   - `D-HH:MM:SS` walltime format
   - `set -euo pipefail`, file existence checks, exit code capture
-  - Environment variable overrides (`RUN_DIR`, `INPUT_FILE`)
   - `export OMP_NUM_THREADS`, echo banner, `mkdir -p` log dir
 - **Query Partitions** — runs `sinfo` on the remote and fills the partition field
 - **Detect Singularity** — finds `singularity`/`apptainer` binary on the remote
 - **Job Queue** — colour-coded table (RUNNING=green, PENDING=yellow, FAILED=red)
-- **View Output** — opens the `.out` file for a selected job directly in the editor
-- **HPC Mode** toggle — when enabled, ▶ Run routes through `sbatch` instead of direct `mpirun`
-- **Auto-detect** — connecting to a host with "hpc", "cluster", "iitj", etc. in the name automatically enables HPC mode, queries partitions, detects Singularity, and loads saved config
-- Config saved to `~/.lammps_dashboard/hpc_config.json` (desktop) / browser localStorage (web)
+- **Auto ⟳ checkbox** — polls `squeue` automatically every 30 seconds
+- **Right-click queue row:** View Output, Copy Job ID, Cancel Job
+- **HPC Mode** toggle — when enabled, ▶ Run routes through `sbatch`
+- **Auto-detect** — connecting to an HPC hostname automatically enables HPC mode, queries partitions, detects Singularity, and loads saved config
 
 ### 🤖 AI Assistant
 - Runs **entirely offline** via [Ollama](https://ollama.com/) — no data leaves your machine
@@ -137,6 +162,13 @@ Re-running `setup.sh` is safe — it skips already-completed steps.
   | Custom | — | Any `ollama pull`-compatible name |
 - **CPU mode** checkbox — use `num_gpu=0` (safe for T1000 / Turing and older GPUs)
 - CUDA error auto-recovery — if a GPU error is detected, CPU mode is enabled automatically
+
+### Header Buttons
+| Button | Function |
+|---|---|
+| 🌙 / 🌑 | Toggle light/dark theme (saved in browser localStorage) |
+| 🔔 / 🔕 | Enable/disable desktop browser notifications for run completion |
+| ⬤ badge | Shows current SSH connection name |
 
 ---
 
@@ -167,8 +199,8 @@ lammps_dashboard/
 ├── templates/
 │   └── index.html      # Browser frontend (SPA)
 ├── static/
-│   ├── style.css       # Dark theme CSS
-│   └── app.js          # Browser client JavaScript
+│   ├── style.css       # Dark/light theme CSS
+│   └── app.js          # Browser client JavaScript (~1700 lines)
 ├── README.md           # This file
 └── ollama_models/      # Bundled AI model (18 GB, no download)
     ├── blobs/          # Model weight files
@@ -207,6 +239,8 @@ All installed automatically by `setup.sh`.
 | Ollama CUDA error (T1000/Turing GPU) | Enable **CPU mode** checkbox in AI tab |
 | SSH key auth fails | Check key path or use password auth |
 | HPC script not submitting | Verify SSH is connected; check sbatch path on remote |
+| Notifications don't appear | Click 🔔 in header and allow when browser asks |
+| Light theme looks partial | Editor panel stays dark intentionally (CodeMirror theme is fixed) |
 
 ---
 

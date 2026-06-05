@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """LAMMPS Dashboard — Flask/SocketIO web backend (full feature parity with desktop GUI)."""
 
-import os, re, signal, threading, subprocess, json, time, select, struct, datetime
+import os, re, signal, threading, subprocess, json, time, select, struct, datetime, shlex
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
@@ -119,6 +119,30 @@ def mkdir():
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
 
+@app.route("/api/file", methods=["DELETE"])
+def delete_local_file():
+    import shutil
+    path = (request.get_json() or {}).get("path", "")
+    if not path:
+        return jsonify({"error": "No path"}), 400
+    try:
+        if os.path.isdir(path):
+            shutil.rmtree(path)
+        else:
+            os.remove(path)
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+@app.route("/api/rename", methods=["POST"])
+def rename_local():
+    d = request.get_json()
+    try:
+        os.rename(d["old_path"], d["new_path"])
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # SSH API
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -218,6 +242,44 @@ def ssh_download_file():
             "Content-Disposition": f'attachment; filename="{filename}"',
             "Content-Type": "application/octet-stream",
         })
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+@app.route("/api/ssh/file", methods=["DELETE"])
+def ssh_delete_file():
+    if not HAS_SSH or not _ssh or not _ssh.connected:
+        return jsonify({"error": "Not connected"}), 400
+    path = (request.get_json() or {}).get("path", "")
+    if not path:
+        return jsonify({"error": "No path"}), 400
+    out = []
+    try:
+        _ssh.exec_stream(f"rm -rf {shlex.quote(path)}", on_line=out.append, on_done=lambda rc: None)
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+@app.route("/api/ssh/rename", methods=["POST"])
+def ssh_rename_file():
+    if not HAS_SSH or not _ssh or not _ssh.connected:
+        return jsonify({"error": "Not connected"}), 400
+    d = request.get_json()
+    try:
+        with _ssh._lock:
+            _ssh._sftp.rename(d["old_path"], d["new_path"])
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+@app.route("/api/ssh/mkdir", methods=["POST"])
+def ssh_mkdir():
+    if not HAS_SSH or not _ssh or not _ssh.connected:
+        return jsonify({"error": "Not connected"}), 400
+    path = request.get_json().get("path", "")
+    try:
+        with _ssh._lock:
+            _ssh._sftp.mkdir(path)
+        return jsonify({"ok": True})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
 

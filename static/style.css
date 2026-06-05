@@ -351,6 +351,25 @@ body.light-theme {
 /* ── Drag-and-drop ───────────────────────────────────────────────────────── */
 .file-tree.drag-over { background: #0a1a30; outline: 2px dashed var(--accent); outline-offset: -4px; }
 
+/* ── Context menu ────────────────────────────────────────────────────────── */
+.ctx-menu {
+  position: fixed; z-index: 9999; min-width: 170px;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 7px; padding: 4px 0;
+  box-shadow: 0 6px 24px rgba(0,0,0,.5);
+  font-size: 12px;
+}
+.ctx-menu.hidden { display: none !important; }
+.ctx-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 14px; cursor: pointer; color: var(--fg);
+  user-select: none;
+}
+.ctx-item:hover { background: var(--sel); }
+.ctx-item.danger { color: var(--red); }
+.ctx-item .ctx-icon { width: 14px; text-align: center; flex-shrink: 0; }
+.ctx-sep { height: 1px; background: var(--border); margin: 4px 6px; }
+
 /* Scrollbars */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg3); }
