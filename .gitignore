@@ -20,10 +20,5 @@ ssh_profiles.json
 dist/
 build/
 
-# ── Flask legacy (not needed for desktop app) ─────────────────────────────────
-static/
-templates/
-app.py
-
 # One-time push helper (contains credential logic)
 push_to_github.sh
