@@ -24,3 +24,6 @@ build/
 static/
 templates/
 app.py
+
+# One-time push helper (contains credential logic)
+push_to_github.sh
