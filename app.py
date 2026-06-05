@@ -688,14 +688,14 @@ def on_ai_pull(data):
             for chunk in _ollama.pull(model, stream=True):
                 if _pull_stop.is_set():
                     break
-                total     = chunk.get("total", 0)
-                completed = chunk.get("completed", 0)
+                total     = chunk.get("total") or 0
+                completed = chunk.get("completed") or 0
                 pct = min(int(completed / total * 100), 99) if total > 0 else 0
                 socketio.emit("pull_progress", {
                     "model": model, "status": chunk.get("status", ""),
                     "pct": pct,
-                    "done_gb":  completed / 1_073_741_824,
-                    "total_gb": total     / 1_073_741_824,
+                    "done_gb":  completed / 1_073_741_824 if total > 0 else 0.0,
+                    "total_gb": total     / 1_073_741_824 if total > 0 else 0.0,
                 })
             socketio.emit("pull_done", {"success": True, "model": model})
         except Exception as exc:

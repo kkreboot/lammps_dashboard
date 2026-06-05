@@ -581,8 +581,8 @@ class ModelPullThread(QThread):
                 if self._stop:
                     break
                 status    = chunk.get("status", "")
-                total     = chunk.get("total", 0)
-                completed = chunk.get("completed", 0)
+                total     = chunk.get("total") or 0
+                completed = chunk.get("completed") or 0
                 if total > 0:
                     pct      = min(int(completed / total * 100), 99)
                     done_gb  = completed / 1_073_741_824
