@@ -470,11 +470,13 @@ class SimRunner(QThread):
 
     def run(self):
         try:
+            _env = os.environ.copy()
+            _env.pop("DISPLAY", None)  # suppress spurious X11 warnings from MPI
             self._proc = subprocess.Popen(
                 self.cmd, shell=True, cwd=self.cwd,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True, bufsize=1,
-                preexec_fn=os.setsid,
+                preexec_fn=os.setsid, env=_env,
             )
             for line in iter(self._proc.stdout.readline, ""):
                 self.line_ready.emit(line.rstrip())
@@ -1498,7 +1500,18 @@ class LAMMPSDashboard(QMainWindow):
         bin_  = self._inp_bin.text().strip() or "lmp"
         extra = self._inp_extra.text().strip()
 
-        cmd = f"mpirun -np {np_} {bin_} -in {inp}"
+        # Resolve relative input path and validate existence before launching
+        if not os.path.isabs(inp):
+            inp_abs = os.path.join(wd, inp)
+        else:
+            inp_abs = inp
+            wd = os.path.dirname(inp_abs) or wd
+        if not os.path.isfile(inp_abs):
+            QMessageBox.warning(self, "File Not Found",
+                                f"Input script not found:\n{inp_abs}\n\nCheck the Working Dir and filename.")
+            return
+
+        cmd = f"mpirun -np {np_} {bin_} -in {inp_abs} -log {wd}/log.lammps"
         if extra:
             cmd += f" {extra}"
 
@@ -2248,7 +2261,14 @@ class LAMMPSDashboard(QMainWindow):
             QMessageBox.warning(self, "No Input", "Enter an input file name.")
             return
 
-        cmd = f"mpirun -np {np_} {bin_} -in {inp}"
+        # Resolve relative input path against remote working dir
+        if not inp.startswith('/'):
+            inp_abs = (wd.rstrip('/') + '/' + inp) if wd else inp
+        else:
+            inp_abs = inp
+            wd = inp_abs.rsplit('/', 1)[0] or wd
+
+        cmd = f"mpirun -np {np_} {bin_} -in {inp_abs} -log {wd.rstrip('/')}/log.lammps"
         if extra:
             cmd += f" {extra}"
 

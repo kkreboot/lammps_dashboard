@@ -247,14 +247,29 @@ def run_simulation():
     d          = request.get_json()
     inp        = d.get("input_file", "").strip()
     np_val     = int(d.get("np", 4))
-    wdir       = os.path.expanduser(d.get("working_dir", _state["working_dir"]).strip())
+    wdir       = os.path.expanduser((d.get("working_dir", "") or _state["working_dir"]).strip())
+    if not wdir:
+        wdir = _state["working_dir"]
     lmp_bin    = d.get("lmp_bin", "lmp").strip()
     extra      = d.get("extra_args", "").strip()
     remote     = d.get("remote", False)
     if not inp:
         return jsonify({"error": "No input file specified"}), 400
+
+    # Resolve relative input path against working dir so LAMMPS always gets
+    # an absolute path — avoids "file not found" when cwd drifts.
+    if not os.path.isabs(inp):
+        inp_abs = os.path.join(wdir, inp)
+    else:
+        inp_abs = inp
+        wdir = os.path.dirname(inp_abs) or wdir
+
+    if not remote and not os.path.isfile(inp_abs):
+        return jsonify({"error": f"Input file not found: {inp_abs}"}), 400
+
     _state["working_dir"] = wdir
-    cmd = f"mpirun -np {np_val} {lmp_bin} -in {inp}"
+    log_path_arg = wdir.rstrip("/") + "/log.lammps"
+    cmd = f"mpirun -np {np_val} {lmp_bin} -in {inp_abs} -log {log_path_arg}"
     if extra:
         cmd += f" {extra}"
 
@@ -283,9 +298,11 @@ def run_simulation():
     else:
         def _run_local():
             try:
+                _env = os.environ.copy()
+                _env.pop("DISPLAY", None)  # suppress spurious X11 warnings from MPI
                 proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT, cwd=wdir, text=True, bufsize=1,
-                    preexec_fn=os.setsid)
+                    preexec_fn=os.setsid, env=_env)
                 _state["process"] = proc
                 _state["running"] = True
                 socketio.emit("status", {"running": True, "pid": proc.pid, "cmd": cmd})
@@ -306,7 +323,7 @@ def run_simulation():
                 socketio.emit("status", {"running": False, "returncode": -1})
                 socketio.emit("log_line", {"line": f"[ERROR] {exc}"})
         threading.Thread(target=_run_local, daemon=True).start()
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "working_dir": wdir})
 
 @app.route("/api/stop", methods=["POST"])
 def stop_simulation():

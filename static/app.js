@@ -322,7 +322,9 @@ document.getElementById('btn-run').addEventListener('click', async () => {
   const d = await POST('/api/run', { input_file:inp, working_dir:dir, np, lmp_bin:bin, extra_args:extra, remote });
   if (d.error) { alert(d.error); return; }
   setRunning(true);
-  appendLog(`▶ mpirun -np ${np} ${bin} -in ${inp}`, 'log-ok');
+  if (d.working_dir) {
+    document.getElementById('plot-log-path').value = d.working_dir.replace(/\/$/, '') + '/log.lammps';
+  }
 });
 
 document.getElementById('btn-stop').addEventListener('click', () => {
@@ -401,6 +403,9 @@ socket.on('log_line', d => appendLog(d.line,
 
 socket.on('status', d => {
   setRunning(d.running);
+  if (d.running && d.cmd) {
+    appendLog('▶ ' + d.cmd, 'log-ok');
+  }
   if (!d.running) {
     const ok = d.returncode === 0;
     appendLog(`⬛ Finished — exit code: ${d.returncode}`, ok ? 'log-ok' : 'log-err');
@@ -1169,8 +1174,10 @@ function toast(msg, ms = 2200) {
 (async function init() {
   try { initEditor(); } catch (e) { console.error('Editor init failed:', e); }
   const st = await GET('/api/status').catch(() => ({}));
-  loadDir(st.working_dir || '/home');
-  document.getElementById('plot-log-path').value = (st.working_dir || '') + '/log.lammps';
+  const wd = st.working_dir || '';
+  loadDir(wd || '/home');
+  document.getElementById('plot-log-path').value = (wd || '') + '/log.lammps';
+  if (wd) document.getElementById('run-dir').value = wd;
 
   // Restore SSH state
   const ss = await GET('/api/ssh/status').catch(() => ({}));
