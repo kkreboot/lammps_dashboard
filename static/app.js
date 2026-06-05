@@ -162,10 +162,88 @@ document.getElementById('btn-up').addEventListener('click', () => {
   loadDir(parent, remote);
 });
 document.getElementById('btn-save').addEventListener('click', saveFile);
-document.getElementById('btn-save-as').addEventListener('click', async () => {
-  const p = prompt('Save as:', currentFilePath); if (!p) return;
-  currentFilePath = p; currentFileRemote = false;
-  document.getElementById('editor-filename').textContent = p;
+
+// ── Save As — file picker ─────────────────────────────────────────────────
+let _saveAsDir    = '';
+let _saveAsRemote = false;
+
+function openSaveAs() {
+  _saveAsRemote = currentFileRemote;
+  _saveAsDir = currentFilePath
+    ? (currentFilePath.lastIndexOf('/') > 0
+        ? currentFilePath.substring(0, currentFilePath.lastIndexOf('/'))
+        : '/')
+    : (currentDir || '/home');
+  const basename = currentFilePath
+    ? currentFilePath.substring(currentFilePath.lastIndexOf('/') + 1)
+    : '';
+  document.getElementById('saveas-filename').value = basename;
+  document.getElementById('saveas-overlay').classList.remove('hidden');
+  loadSaveAsTree(_saveAsDir);
+}
+
+async function loadSaveAsTree(path) {
+  _saveAsDir = path;
+  document.getElementById('saveas-dir-input').value =
+    _saveAsRemote ? `[SSH] ${path}` : path;
+  const url = _saveAsRemote
+    ? `/api/ssh/files?path=${enc(path)}`
+    : `/api/files?dir=${enc(path)}`;
+  let d;
+  try { d = await GET(url); } catch(e) { alert('Error: ' + e); return; }
+  if (d.error) { alert(d.error); return; }
+  const tree = document.getElementById('saveas-tree');
+  tree.innerHTML = '';
+  if (d.parent !== null) {
+    tree.appendChild(makeTreeItem('..', '↑', 'tree-dir', () => loadSaveAsTree(d.parent)));
+  }
+  d.entries.forEach(e => {
+    const item = makeTreeItem(
+      e.name,
+      e.type === 'dir' ? '📂' : fileIcon(e.name),
+      e.type === 'dir' ? 'tree-dir' : 'tree-file',
+      () => {
+        if (e.type === 'dir') {
+          loadSaveAsTree(e.path);
+        } else {
+          document.getElementById('saveas-filename').value = e.name;
+        }
+      }
+    );
+    tree.appendChild(item);
+  });
+}
+
+document.getElementById('btn-save-as').addEventListener('click', openSaveAs);
+
+document.getElementById('saveas-go-btn').addEventListener('click', () => {
+  let p = document.getElementById('saveas-dir-input').value.trim();
+  const remote = p.startsWith('[SSH]');
+  if (remote) p = p.replace(/^\[SSH\]\s*/, '');
+  _saveAsRemote = remote;
+  loadSaveAsTree(p || '/');
+});
+document.getElementById('saveas-dir-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('saveas-go-btn').click();
+});
+document.getElementById('saveas-up-btn').addEventListener('click', () => {
+  const parent = (_saveAsDir === '/' || !_saveAsDir)
+    ? '/'
+    : _saveAsDir.substring(0, _saveAsDir.lastIndexOf('/')) || '/';
+  loadSaveAsTree(parent);
+});
+document.getElementById('btn-saveas-cancel').addEventListener('click', () => {
+  document.getElementById('saveas-overlay').classList.add('hidden');
+});
+document.getElementById('btn-saveas-save').addEventListener('click', async () => {
+  const name = document.getElementById('saveas-filename').value.trim();
+  if (!name) { alert('Enter a filename'); return; }
+  const newPath = (_saveAsDir.replace(/\/$/, '') || '') + '/' + name;
+  currentFilePath   = newPath;
+  currentFileRemote = _saveAsRemote;
+  document.getElementById('editor-filename').textContent =
+    (_saveAsRemote ? '[SSH] ' : '') + newPath;
+  document.getElementById('saveas-overlay').classList.add('hidden');
   await saveFile();
 });
 document.getElementById('btn-new-file').addEventListener('click', async () => {

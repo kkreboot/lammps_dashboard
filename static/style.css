@@ -223,6 +223,20 @@ button:disabled { opacity: .4; cursor: default; }
 .model-table tr.recommended td:last-child { color: var(--green); }
 .modal-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 
+/* ── Save As dialog ──────────────────────────────────────────────────────── */
+.saveas-box { width: 500px; }
+.saveas-pathbar { display: flex; gap: 6px; margin-bottom: 8px; }
+.saveas-pathbar input { flex: 1; }
+.saveas-pathbar button { padding: 4px 10px; font-size: 13px; flex-shrink: 0; }
+.saveas-tree {
+  height: 240px; overflow-y: auto; background: var(--bg3);
+  border: 1px solid var(--border); border-radius: 5px; margin-bottom: 10px;
+}
+.saveas-tree .tree-file { opacity: 0.6; }
+.saveas-tree .tree-file:hover { opacity: 1; }
+.saveas-label { display: block; font-size: 11px; color: var(--fg2); }
+.saveas-label input { display: block; width: 100%; margin-top: 4px; }
+
 /* ── Run tab extras ──────────────────────────────────────────────────────── */
 .run-target-bar {
   padding: 6px 10px; background: #1a2a1a; border: 1px solid var(--green);
