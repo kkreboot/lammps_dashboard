@@ -141,7 +141,7 @@ lammps_dashboard/
 ├── setup.sh            # One-shot setup script
 ├── run.sh              # Launch script
 ├── README.md           # This file
-└── ollama_models/      # Bundled AI model (18 GB, no download needed)
+└── ollama_models/      # Bundled AI model (download needed)
     ├── blobs/          # Model weight files
     └── manifests/      # Ollama registry metadata
 ```
