@@ -833,17 +833,24 @@ function autoDetectHpc(host) {
 // ═══════════════════════════════════════════════════════════════════════════
 // AI tab
 // ═══════════════════════════════════════════════════════════════════════════
-async function refreshAiModels() {
-  const sel = document.getElementById('ai-model-sel');
-  const d = await GET('/api/ai/models');
-  const prev = sel.value;
+async function refreshAiModels(preferModel = null) {
+  const sel  = document.getElementById('ai-model-sel');
+  const prev = sel.value;  // capture BEFORE await to avoid race condition
+  const d    = await GET('/api/ai/models');
   sel.innerHTML = d.models && d.models.length
     ? d.models.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('')
     : `<option value="">(no models — click ⬇ Get Model)</option>`;
-  if (d.models && d.models.includes(prev)) sel.value = prev;
+  if (d.models && d.models.length) {
+    // priority: explicit prefer (after download) → previous selection → qwen3-coder → first
+    const target = [preferModel, prev,
+      d.models.find(m => m.includes('qwen3-coder')),
+      d.models[0]
+    ].find(m => m && d.models.includes(m));
+    if (target) sel.value = target;
+  }
   const st = document.getElementById('ai-status');
   if (d.models && d.models.length) {
-    st.textContent = `● ${d.models.length} model(s) available`;
+    st.textContent = `● ${d.models.length} model(s) — ${sel.value}`;
     st.style.color = 'var(--green)';
   } else {
     st.textContent = d.error ? '● ' + d.error : '● No models downloaded';
@@ -1041,8 +1048,7 @@ socket.on('pull_done', d => {
   document.getElementById('dl-bar-row').classList.add('hidden');
   const st = document.getElementById('ai-status');
   if (d.success) {
-    st.textContent = `● ${d.model} ready`; st.style.color = 'var(--green)';
-    refreshAiModels();
+    refreshAiModels(d.model);
   } else {
     st.textContent = '● Download failed'; st.style.color = 'var(--red)';
     alert('Download failed: ' + (d.error || 'unknown'));

@@ -3308,25 +3308,31 @@ class LAMMPSDashboard(QMainWindow):
 
     # ── AI helpers ────────────────────────────────────────────────────────
 
-    def _ai_refresh_models(self):
+    def _ai_refresh_models(self, prefer_model: str = ""):
         """Populate model combo from running Ollama instance."""
         if not HAS_OLLAMA:
             self._ai_status_lbl.setText("● ollama package missing")
             self._ai_status_lbl.setStyleSheet(f"color:{RED}; font-size:9pt;")
             return
         try:
-            resp   = _ollama_lib.list()
-            models = [m["model"] for m in resp.get("models", [])]
+            resp = _ollama_lib.list()
+            models = ([m.model for m in resp.models] if hasattr(resp, "models")
+                      else [m.get("model", m.get("name", "")) for m in resp.get("models", [])])
+            models = [m for m in models if m]
             prev   = self._ai_model_cb.currentText()
             self._ai_model_cb.clear()
             if models:
                 self._ai_model_cb.addItems(models)
-                # restore previous selection, else prefer qwen3-coder, else index 0
-                target = prev if prev in models else next(
-                    (m for m in models if "qwen3-coder" in m), None)
-                if target and target in models:
+                # priority: explicit prefer (after download) → previous → qwen3-coder → first
+                target = next(
+                    (m for m in [prefer_model, prev,
+                                 next((m for m in models if "qwen3-coder" in m), None),
+                                 models[0]]
+                     if m and m in models), None)
+                if target:
                     self._ai_model_cb.setCurrentIndex(models.index(target))
-                self._ai_status_lbl.setText(f"● {len(models)} model(s) available")
+                self._ai_status_lbl.setText(
+                    f"● {len(models)} model(s) — {self._ai_model_cb.currentText()}")
                 self._ai_status_lbl.setStyleSheet(f"color:{GREEN}; font-size:9pt;")
             else:
                 self._ai_model_cb.addItem("(no models — click ⬇ Get Model)")
@@ -3470,14 +3476,7 @@ class LAMMPSDashboard(QMainWindow):
     def _on_pull_finished(self, success: bool, model_or_err: str):
         self._dl_frame.setVisible(False)
         if success:
-            self._ai_status_lbl.setText(f"● {model_or_err} ready")
-            self._ai_status_lbl.setStyleSheet(f"color:{GREEN}; font-size:9pt;")
-            self._ai_refresh_models()
-            # select the newly downloaded model
-            for i in range(self._ai_model_cb.count()):
-                if self._ai_model_cb.itemText(i) == model_or_err:
-                    self._ai_model_cb.setCurrentIndex(i)
-                    break
+            self._ai_refresh_models(prefer_model=model_or_err)
         else:
             self._ai_status_lbl.setText(f"● Download failed")
             self._ai_status_lbl.setStyleSheet(f"color:{RED}; font-size:9pt;")
@@ -3504,7 +3503,9 @@ class LAMMPSDashboard(QMainWindow):
         if HAS_OLLAMA:
             try:
                 resp   = _ollama_lib.list()
-                models = [m["model"] for m in resp.get("models", [])]
+                models = ([m.model for m in resp.models] if hasattr(resp, "models")
+                          else [m.get("model", "") for m in resp.get("models", [])])
+                models = [m for m in models if m]
                 if models:
                     self._dl_frame.setVisible(False)
                     if self._dl_timer:
