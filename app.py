@@ -11,7 +11,7 @@ app.config["SECRET_KEY"] = "lammps-dashboard-2024"
 socketio = SocketIO(app, async_mode="threading", cors_allowed_origins="*")
 
 # ── Shared state ──────────────────────────────────────────────────────────────
-_state = {"process": None, "running": False, "working_dir": os.path.expanduser("~")}
+_state = {"process": None, "running": False, "working_dir": os.path.expanduser("~"), "ssh_home": None}
 _ai_stop   = threading.Event()
 _pull_stop = threading.Event()
 _ai_history: list = []
@@ -104,10 +104,13 @@ def mkdir():
 def ssh_status():
     if not HAS_SSH or not _ssh:
         return jsonify({"connected": False, "has_ssh": False})
+    profile = _ssh.profile.to_dict() if _ssh.profile else None
+    if profile and _state.get("ssh_home"):
+        profile["home"] = _state["ssh_home"]
     return jsonify({
         "connected": _ssh.connected,
         "has_ssh": True,
-        "profile": _ssh.profile.to_dict() if _ssh.profile else None,
+        "profile": profile,
     })
 
 @app.route("/api/ssh/profiles")
@@ -137,7 +140,9 @@ def ssh_connect():
     save_profiles(_profiles)
     try:
         _ssh.connect(profile)
-        return jsonify({"ok": True, "home": _ssh.get_home()})
+        home = _ssh.get_home()
+        _state["ssh_home"] = home
+        return jsonify({"ok": True, "home": home})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -145,6 +150,7 @@ def ssh_connect():
 def ssh_disconnect():
     if _ssh:
         _ssh.disconnect()
+    _state["ssh_home"] = None
     return jsonify({"ok": True})
 
 @app.route("/api/ssh/delete_profile", methods=["POST"])
@@ -612,7 +618,12 @@ def ai_models():
         return jsonify({"models": [], "error": "ollama not installed"})
     try:
         resp = _ollama.list()
-        return jsonify({"models": [m["model"] for m in resp.get("models", [])]})
+        # Handle both older dict-based API and newer object-based API
+        if hasattr(resp, "models"):
+            models = [getattr(m, "model", None) or getattr(m, "name", str(m)) for m in resp.models]
+        else:
+            models = [m.get("model", m.get("name", "")) for m in resp.get("models", [])]
+        return jsonify({"models": [m for m in models if m]})
     except Exception as exc:
         return jsonify({"models": [], "error": str(exc)})
 

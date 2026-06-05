@@ -380,7 +380,7 @@ document.getElementById('btn-plot').addEventListener('click', () => {
 
 document.getElementById('btn-load-log').addEventListener('click', async () => {
   const path   = document.getElementById('plot-log-path').value.trim() || 'log.lammps';
-  const remote = sshConnected;
+  const remote = sshConnected && document.getElementById('run-remote').checked;
   const d = await GET(`/api/parse_log?path=${enc(path)}&remote=${remote}`);
   if (d.error) { alert(d.error); return; }
   if (!d.headers || !d.headers.length) { alert('No thermo data found.'); return; }
@@ -577,7 +577,12 @@ async function uploadFileToRemote(file, remotePath) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = async e => {
-      const b64 = btoa(String.fromCharCode(...new Uint8Array(e.target.result)));
+      const bytes = new Uint8Array(e.target.result);
+      let binary = '';
+      const CHUNK = 0x8000;
+      for (let i = 0; i < bytes.length; i += CHUNK)
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+      const b64 = btoa(binary);
       const d = await POST('/api/ssh/upload', { remote_path: remotePath, content: b64 });
       if (d.error) { alert('Upload failed: ' + d.error); reject(d.error); }
       else { toast('Uploaded: ' + remotePath); resolve(); }
@@ -848,10 +853,11 @@ async function refreshAiModels() {
 
 document.getElementById('btn-ai-refresh').addEventListener('click', refreshAiModels);
 document.getElementById('btn-ai-clear').addEventListener('click', async () => {
-  await POST('/api/ai/history', {}); // method DELETE not easy via fetch helper
   fetch('/api/ai/history', { method: 'DELETE' });
   document.getElementById('chat-view').innerHTML = '';
-  aiPartial = ''; aiAttachText = '';
+  aiPartial = ''; aiPending = false; aiStreaming = false; aiAttachText = '';
+  document.getElementById('btn-ai-send').disabled = false;
+  document.getElementById('btn-ai-stop').disabled = true;
   document.getElementById('ai-attach-bar').classList.add('hidden');
 });
 
@@ -1093,6 +1099,8 @@ function toast(msg, ms = 2200) {
     document.getElementById('btn-ssh-upload').disabled    = false;
     document.getElementById('btn-ssh-download').disabled  = false;
     setSshStatus(`Connected — ${ss.profile.username}@${ss.profile.host}`, 'var(--green)');
+    // Restore remote file tree to home directory
+    loadDir(ss.profile.home || '/', true);
   }
 
   updateRunTargetBar();
