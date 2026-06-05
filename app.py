@@ -155,6 +155,43 @@ def delete_ssh_profile():
     save_profiles(_profiles)
     return jsonify({"ok": True})
 
+@app.route("/api/ssh/upload", methods=["POST"])
+def ssh_upload():
+    """Receive a base64-encoded file and write it to the remote via SFTP."""
+    if not HAS_SSH or not _ssh or not _ssh.connected:
+        return jsonify({"error": "Not connected"}), 400
+    import base64
+    d = request.get_json()
+    remote_path = d.get("remote_path", "")
+    content_b64 = d.get("content", "")
+    try:
+        data = base64.b64decode(content_b64)
+        with _ssh._lock:
+            with _ssh._sftp.open(remote_path, "wb") as f:
+                f.write(data)
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+@app.route("/api/ssh/download_file")
+def ssh_download_file():
+    """Stream a remote file as a browser download."""
+    if not HAS_SSH or not _ssh or not _ssh.connected:
+        return jsonify({"error": "Not connected"}), 400
+    from flask import Response
+    path = request.args.get("path", "")
+    filename = os.path.basename(path)
+    try:
+        with _ssh._lock:
+            with _ssh._sftp.open(path, "rb") as f:
+                content = f.read()
+        return Response(content, headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Type": "application/octet-stream",
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
 @app.route("/api/ssh/files")
 def ssh_files():
     if not HAS_SSH or not _ssh or not _ssh.connected:
@@ -464,16 +501,30 @@ def hpc_submit():
 @app.route("/api/hpc/queue")
 def hpc_queue():
     if not HAS_SSH or not _ssh or not _ssh.connected:
-        return jsonify({"error": "Not connected"}), 400
-    user = _ssh.profile.username if _ssh.profile else ""
+        return jsonify({"error": "Not connected", "jobs": []}), 400
+    user = _ssh.profile.username if _ssh.profile else "$USER"
     out = []
     try:
         _ssh.exec_stream(
-            f"squeue -u {user} --format='%.10i %.15j %.10u %.5D %.6C %.10m %.12l %.10T %.14R' 2>&1",
+            f"squeue -u {user} -o '%i|%j|%T|%R|%l|%P|%C|%m' --noheader 2>/dev/null",
             on_line=out.append, on_done=lambda rc: None)
-        return jsonify({"output": "\n".join(out)})
+        jobs = []
+        for line in out:
+            parts = line.split("|")
+            if len(parts) >= 8:
+                jobs.append({
+                    "id":        parts[0].strip(),
+                    "name":      parts[1].strip(),
+                    "status":    parts[2].strip(),
+                    "reason":    parts[3].strip(),
+                    "time":      parts[4].strip(),
+                    "partition": parts[5].strip(),
+                    "cpus":      parts[6].strip(),
+                    "mem":       parts[7].strip(),
+                })
+        return jsonify({"jobs": jobs})
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 400
+        return jsonify({"error": str(exc), "jobs": []}), 400
 
 @app.route("/api/hpc/cancel", methods=["POST"])
 def hpc_cancel():
@@ -507,6 +558,49 @@ def hpc_sinfo():
         return jsonify({"output": "\n".join(out)})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
+
+@app.route("/api/hpc/partitions")
+def hpc_partitions():
+    if not HAS_SSH or not _ssh or not _ssh.connected:
+        return jsonify({"error": "Not connected"}), 400
+    out = []
+    try:
+        _ssh.exec_stream("sinfo -h -o '%P' 2>/dev/null | tr -d '*'",
+                         on_line=out.append, on_done=lambda rc: None)
+        parts = [p.strip() for p in out if p.strip()]
+        return jsonify({"partitions": parts})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+@app.route("/api/hpc/detect_singularity")
+def hpc_detect_singularity():
+    if not HAS_SSH or not _ssh or not _ssh.connected:
+        return jsonify({"error": "Not connected"}), 400
+    out = []
+    try:
+        _ssh.exec_stream("which singularity apptainer 2>/dev/null | head -1",
+                         on_line=out.append, on_done=lambda rc: None)
+        return jsonify({"binary": out[0].strip() if out else ""})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+@app.route("/api/run/detect_binary")
+def detect_binary():
+    if HAS_SSH and _ssh and _ssh.connected:
+        out = []
+        try:
+            _ssh.exec_stream("which lmp lmp_mpi lmp_serial lammps 2>/dev/null | head -1",
+                             on_line=out.append, on_done=lambda rc: None)
+            return jsonify({"binary": out[0].strip() if out else ""})
+        except Exception as exc:
+            return jsonify({"binary": "", "error": str(exc)})
+    else:
+        import shutil
+        for name in ("lmp", "lmp_mpi", "lmp_serial", "lammps"):
+            p = shutil.which(name)
+            if p:
+                return jsonify({"binary": p})
+        return jsonify({"binary": ""})
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # AI / Ollama

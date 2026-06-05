@@ -34,14 +34,14 @@
 
 <main>
 
-<!-- FILES -->
+<!-- ══════════ FILES ══════════ -->
 <section id="tab-files" class="tab-panel active">
   <div class="split-pane" id="split-pane">
     <div class="tree-panel" id="tree-panel">
       <div class="panel-toolbar">
         <input id="path-bar" type="text" placeholder="/home/user" spellcheck="false"/>
-        <button id="btn-go" title="Go">→</button>
-        <button id="btn-up" title="Parent">↑</button>
+        <button id="btn-go" title="Navigate">→</button>
+        <button id="btn-up" title="Parent dir">↑</button>
         <button id="btn-new-file" title="New file">+F</button>
         <button id="btn-new-dir" title="New folder">+D</button>
       </div>
@@ -52,29 +52,45 @@
       <div class="panel-toolbar">
         <span id="editor-filename" class="editor-fname">no file open</span>
         <div style="flex:1"></div>
+        <button id="btn-use-as-input" title="Set as Run tab input" style="color:var(--green)">▶ Use as Input</button>
         <button id="btn-save">💾 Save</button>
         <button id="btn-save-as">Save As…</button>
+        <button id="btn-ssh-upload-file" title="Upload to remote server" class="btn-ssh-only hidden">⬆ Upload</button>
+        <button id="btn-ssh-download-file" title="Download from remote server" class="btn-ssh-only hidden">⬇ Download</button>
       </div>
       <div id="editor-wrap"></div>
     </div>
   </div>
+  <!-- Hidden file input for upload -->
+  <input type="file" id="file-upload-input" style="display:none"/>
 </section>
 
-<!-- RUN -->
+<!-- ══════════ RUN ══════════ -->
 <section id="tab-run" class="tab-panel hidden">
   <div class="run-layout">
     <div class="card run-controls">
       <h3>Simulation Controls</h3>
+      <div id="run-target-bar" class="run-target-bar">▶ Run target: 💻 Local machine</div>
       <label>Input file
         <div class="input-row">
           <input id="run-input" type="text" placeholder="in.lammps"/>
           <button id="btn-browse-input">Browse</button>
         </div>
       </label>
-      <label>Working directory <input id="run-dir" type="text" placeholder="/path/to/sim"/></label>
+      <label>Working directory
+        <div class="input-row">
+          <input id="run-dir" type="text" placeholder="/path/to/sim"/>
+          <button id="btn-browse-dir">Browse</button>
+        </div>
+      </label>
       <div class="row2">
         <label>MPI procs <input id="run-np" type="number" value="4" min="1"/></label>
-        <label>Binary <input id="run-bin" type="text" value="lmp"/></label>
+        <label>Binary
+          <div class="input-row" style="margin-top:3px">
+            <input id="run-bin" type="text" value="lmp"/>
+            <button id="btn-detect-bin" title="Auto-detect lmp binary">Detect</button>
+          </div>
+        </label>
       </div>
       <label>Extra args <input id="run-extra" type="text" placeholder="-var T 300"/></label>
       <label class="chk-label"><input id="run-remote" type="checkbox"/> Run on SSH server</label>
@@ -88,6 +104,7 @@
     <div class="card log-card">
       <div class="card-header">
         <span>Output Log</span>
+        <span id="log-count" style="font-size:10px;color:var(--fg2)">0 lines</span>
         <button id="btn-clear-log" class="btn-small">Clear</button>
         <label class="chk-label" style="font-size:11px"><input id="log-autoscroll" type="checkbox" checked/> Auto-scroll</label>
       </div>
@@ -96,29 +113,39 @@
   </div>
 </section>
 
-<!-- PLOTS -->
+<!-- ══════════ PLOTS ══════════ -->
 <section id="tab-plots" class="tab-panel hidden">
   <div class="plots-layout">
     <div class="card plot-controls">
       <h3>Thermo Plots</h3>
       <label>X axis <select id="plot-x"></select></label>
-      <label>Y axis (hold Ctrl/Cmd for multi)
-        <select id="plot-y" multiple size="8" style="height:auto"></select>
+      <div class="col-header">
+        <span>Columns</span>
+        <button id="btn-all-cols" class="btn-small">All</button>
+        <button id="btn-no-cols" class="btn-small">None</button>
+      </div>
+      <div id="plot-col-checks" class="col-checks"></div>
+      <label style="margin-top:8px">Layout
+        <select id="plot-layout">
+          <option value="grid">Grid (separate subplots)</option>
+          <option value="overlay">Overlay (one chart)</option>
+        </select>
       </label>
-      <div class="btn-row">
+      <div class="btn-row" style="margin-top:10px">
         <button id="btn-plot">Plot</button>
         <button id="btn-load-log">Load log.lammps</button>
+        <button id="btn-save-plot" class="btn-small">💾 Save PNG</button>
       </div>
-      <label>Log path <input id="plot-log-path" type="text" placeholder="log.lammps (auto from run)"/></label>
+      <label style="margin-top:8px">Log path <input id="plot-log-path" type="text" placeholder="log.lammps"/></label>
     </div>
-    <div class="card chart-area">
-      <canvas id="thermo-chart"></canvas>
+    <div class="card chart-area" id="chart-area">
+      <div id="subplot-grid" class="subplot-grid"></div>
       <div id="no-plot-msg" class="empty-msg">Run a simulation or click "Load log.lammps" to see plots.</div>
     </div>
   </div>
 </section>
 
-<!-- SSH -->
+<!-- ══════════ SSH ══════════ -->
 <section id="tab-ssh" class="tab-panel hidden">
   <div class="ssh-layout">
     <div class="card">
@@ -154,18 +181,44 @@
     <div class="card" id="ssh-info-card">
       <h3>Connection Info</h3>
       <div id="ssh-info-body" class="mono-text">Connect to a server to see details.</div>
+      <div class="btn-row" style="margin-top:10px">
+        <button id="btn-ssh-upload" class="btn-ssh-only" disabled>⬆ Upload File to Remote</button>
+        <button id="btn-ssh-download" class="btn-ssh-only" disabled>⬇ Download from Remote</button>
+      </div>
+      <label style="margin-top:8px" id="ssh-remote-path-label" class="hidden">Remote path
+        <input id="ssh-remote-path" type="text" placeholder="/scratch/data/user/file.txt"/>
+      </label>
+      <input type="file" id="ssh-upload-input" style="display:none"/>
     </div>
   </div>
 </section>
 
-<!-- HPC -->
+<!-- ══════════ HPC ══════════ -->
 <section id="tab-hpc" class="tab-panel hidden">
+  <div class="hpc-topbar">
+    <span style="font-size:14pt">⚡</span>
+    <span style="font-weight:700;color:var(--fg)">HPC Job Scheduler — SLURM (IITJ)</span>
+    <div class="sep"></div>
+    <label class="chk-label hpc-mode-label"><input id="h-hpc-mode" type="checkbox"/> HPC Mode</label>
+    <div class="sep"></div>
+    <span id="hpc-status-lbl" class="status-label">● SSH not connected</span>
+    <div style="flex:1"></div>
+    <button id="btn-hpc-sinfo" class="btn-small">sinfo</button>
+    <button id="btn-hpc-qpart" class="btn-small">Query Partitions</button>
+    <button id="btn-hpc-refresh" class="btn-small">⟳ Queue</button>
+    <button id="btn-hpc-save-cfg" class="btn-small">💾 Save Config</button>
+    <button id="btn-hpc-load-cfg" class="btn-small">📂 Load Config</button>
+  </div>
   <div class="hpc-layout">
     <div class="card hpc-form-card" id="hpc-form-card">
-      <h3>SLURM Job Settings</h3>
       <div class="form-grid">
         <label>Job name <input id="h-name" value="lammps_job"/></label>
-        <label>Partition <input id="h-part" value="medium"/></label>
+        <label>Partition
+          <div class="input-row" style="margin-top:3px">
+            <input id="h-part" value="medium" list="partition-list"/>
+            <datalist id="partition-list"></datalist>
+          </div>
+        </label>
         <label>Nodes <input id="h-nodes" type="number" value="1" min="1"/></label>
         <label>--ntasks <input id="h-ntasks" type="number" value="32" min="1"/></label>
         <label>--cpus-per-task <input id="h-cpt" type="number" value="1" min="1"/></label>
@@ -185,7 +238,13 @@
       <h4><label class="chk-label"><input id="h-use-sif" type="checkbox" checked/> Use Singularity Container</label></h4>
       <div id="sif-fields" class="form-grid">
         <label class="full">SIF path <input id="h-sif" placeholder="/scratch/data/USER/lammps/lammps.sif"/></label>
-        <label class="full">Singularity binary <input id="h-sing" value="singularity"/></label>
+        <label class="full">
+          Singularity binary
+          <div class="input-row" style="margin-top:3px">
+            <input id="h-sing" value="singularity"/>
+            <button id="btn-hpc-detect-sing" class="btn-small" title="Auto-detect on remote">Detect</button>
+          </div>
+        </label>
         <label class="full">Bind mounts (comma-sep) <input id="h-bind" value="$BASE:$BASE"/></label>
       </div>
       <h4>Email</h4>
@@ -206,11 +265,9 @@
       <div id="h-modules-list" class="tag-list"></div>
       <h4>Extra #SBATCH directives</h4>
       <textarea id="h-extra" rows="3" placeholder="#SBATCH --gres=gpu:1"></textarea>
-      <div class="btn-row">
+      <div class="btn-row" style="margin-top:10px">
         <button id="btn-hpc-gen">⚙ Generate Script</button>
-        <button id="btn-hpc-submit" class="btn-green">Submit Job</button>
-        <button id="btn-hpc-save-cfg">💾 Save Config</button>
-        <button id="btn-hpc-load-cfg">📂 Load Config</button>
+        <button id="btn-hpc-submit" class="btn-green">⬆ Submit Job</button>
       </div>
     </div>
     <div class="hpc-right">
@@ -218,39 +275,52 @@
         <div class="card-header">
           <span>Generated Script</span>
           <button id="btn-hpc-copy" class="btn-small">Copy</button>
-          <button id="btn-hpc-download" class="btn-small">Download</button>
+          <button id="btn-hpc-download-sh" class="btn-small">⬇ .sh</button>
         </div>
         <pre id="hpc-script-pre" class="script-pre">Click "Generate Script" to preview.</pre>
       </div>
-      <div class="card">
+      <div class="card hpc-queue-card">
         <div class="card-header">
-          <span>Job Queue</span>
-          <button id="btn-hpc-refresh" class="btn-small">Refresh</button>
-          <button id="btn-hpc-cancel" class="btn-small" style="color:#ef5350">Cancel Selected</button>
+          <span>Job Queue (squeue)</span>
+          <button id="btn-hpc-queue-refresh" class="btn-small">⟳ Refresh</button>
+          <button id="btn-hpc-cancel" class="btn-small" style="color:var(--red)">✕ Cancel</button>
+          <button id="btn-hpc-view-out" class="btn-small">📄 Output</button>
         </div>
-        <pre id="hpc-queue-pre" class="script-pre mono-text">Connect to HPC via SSH to see queue.</pre>
-        <div style="padding:6px 8px">
-          <label style="font-size:11px">Selected Job ID: <input id="h-cancel-job" type="text" placeholder="123456" style="width:120px"/></label>
+        <div class="queue-wrap">
+          <table id="hpc-queue-table" class="queue-table">
+            <thead><tr>
+              <th>Job ID</th><th>Name</th><th>Status</th><th>Reason</th>
+              <th>Time</th><th>Partition</th><th>CPUs</th><th>Mem</th>
+            </tr></thead>
+            <tbody id="hpc-queue-body"></tbody>
+          </table>
+          <div id="hpc-queue-empty" class="empty-msg" style="height:80px">Connect to HPC via SSH to see queue.</div>
         </div>
+        <div id="hpc-queue-info" class="status-bar" style="margin-top:6px">No jobs submitted this session.</div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- AI -->
+<!-- ══════════ AI ══════════ -->
 <section id="tab-ai" class="tab-panel hidden">
   <div class="ai-layout">
     <div class="ai-toolbar">
       <span style="color:var(--fg2);font-size:11px">Model:</span>
       <select id="ai-model-sel"></select>
-      <button id="btn-ai-refresh" title="Refresh">⟳</button>
+      <button id="btn-ai-refresh" title="Refresh model list">⟳</button>
       <button id="btn-ai-get-model" class="btn-green-outline">⬇ Get Model</button>
       <div class="sep"></div>
       <label class="chk-label"><input id="ai-cpu-chk" type="checkbox" checked/> CPU mode</label>
       <div class="sep"></div>
       <span id="ai-status" class="status-label">● Checking…</span>
       <div style="flex:1"></div>
+      <button id="btn-ai-attach" title="Attach current open file to the query">📎 Attach File</button>
       <button id="btn-ai-clear">Clear Chat</button>
+    </div>
+    <div id="ai-attach-bar" class="ai-attach-bar hidden">
+      <span id="ai-attach-name" style="color:var(--yellow);font-size:11px"></span>
+      <button id="btn-ai-detach" class="btn-small">✕</button>
     </div>
     <div id="dl-bar-row" class="dl-bar-row hidden">
       <span id="dl-label">Downloading…</span>

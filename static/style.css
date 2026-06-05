@@ -224,6 +224,63 @@ button:disabled { opacity: .4; cursor: default; }
 .model-table tr.recommended td:last-child { color: var(--green); }
 .modal-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 
+/* ── Run tab extras ──────────────────────────────────────────────────────── */
+.run-target-bar {
+  padding: 6px 10px; background: #1a2a1a; border: 1px solid var(--green);
+  border-radius: 5px; font-size: 11px; color: var(--green); margin-bottom: 12px;
+}
+
+/* ── Plots: column checkboxes ────────────────────────────────────────────── */
+.col-header { display: flex; align-items: center; gap: 6px; margin: 8px 0 4px; }
+.col-header span { font-size: 11px; color: var(--fg2); flex: 1; }
+.col-checks { display: flex; flex-direction: column; gap: 3px; max-height: 220px; overflow-y: auto; }
+.col-check-item { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; padding: 2px 4px; border-radius: 3px; }
+.col-check-item:hover { background: var(--bg3); }
+.col-check-item input { width: auto; cursor: pointer; }
+.col-check-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+/* Subplot grid */
+.subplot-grid { display: grid; gap: 10px; width: 100%; height: 100%; overflow: auto; }
+.subplot-cell { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 8px; position: relative; }
+
+/* ── HPC topbar ──────────────────────────────────────────────────────────── */
+.hpc-topbar {
+  display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+  background: linear-gradient(90deg, #181c28, var(--bg2));
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.hpc-mode-label { color: var(--yellow) !important; font-weight: 700; }
+#tab-hpc { display: flex; flex-direction: column; }
+.hpc-layout { flex: 1; overflow: hidden; display: grid; grid-template-columns: 400px 1fr; gap: 12px; padding: 10px 12px; }
+
+/* HPC queue table */
+.hpc-queue-card { display: flex; flex-direction: column; }
+.queue-wrap { flex: 1; overflow: auto; }
+.queue-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.queue-table th {
+  background: #212535; color: var(--fg2); text-align: left;
+  padding: 5px 8px; font-weight: 700; position: sticky; top: 0; z-index: 1;
+  border-bottom: 1px solid var(--border);
+}
+.queue-table td { padding: 5px 8px; border-top: 1px solid var(--border); font-family: monospace; }
+.queue-table tr:hover td { background: var(--sel); cursor: pointer; }
+.queue-table tr.selected td { background: #1a3550; }
+.status-RUNNING   { color: var(--green); font-weight: 600; }
+.status-PENDING   { color: var(--yellow); }
+.status-FAILED    { color: var(--red); }
+.status-CANCELLED { color: var(--red); opacity: .7; }
+.status-COMPLETED { color: var(--fg2); }
+
+/* ── SSH upload/download ─────────────────────────────────────────────────── */
+.btn-ssh-only { display: inline-block; }
+
+/* ── AI attach bar ───────────────────────────────────────────────────────── */
+.ai-attach-bar {
+  display: flex; align-items: center; gap: 8px; padding: 4px 14px;
+  background: #1a1a0e; border-bottom: 1px solid #3a3a1a; flex-shrink: 0;
+}
+.ai-attach-bar.hidden { display: none; }
+
 /* Scrollbars */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg3); }
