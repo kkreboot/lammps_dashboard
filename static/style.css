@@ -124,8 +124,8 @@ button:disabled { opacity: .4; cursor: default; }
 
 /* ── Run tab ────────────────────────────────────────────────────────────── */
 .run-outer { display: flex; flex-direction: column; height: 100%; }
-.run-layout { display: grid; grid-template-columns: 300px 1fr; gap: 12px; flex: 0 0 280px; padding: 12px; overflow: hidden; }
-.run-term-section { display: flex; flex-direction: column; flex: 1; min-height: 0; border-top: 1px solid var(--border); }
+.run-layout { display: grid; grid-template-columns: 300px 1fr; gap: 12px; flex: 1; padding: 12px; overflow: hidden; }
+.run-term-section { display: flex; flex-direction: column; flex: 1; min-height: 0; border-top: 1px solid var(--border); max-height: 50%; }
 .run-controls { overflow-y: auto; }
 .log-card { display: flex; flex-direction: column; }
 .log-view { flex: 1; overflow-y: auto; font-family: 'Consolas', monospace; font-size: 11.5px; padding: 8px; background: var(--bg3); border-radius: 4px; white-space: pre-wrap; word-break: break-all; line-height: 1.6; }
@@ -307,6 +307,49 @@ button:disabled { opacity: .4; cursor: default; }
 }
 .terminal-container .xterm { height: 100%; }
 .terminal-container .xterm-viewport { overflow-y: auto !important; }
+
+/* ── Light theme ─────────────────────────────────────────────────────────── */
+body.light-theme {
+  --bg: #f0f2f5; --bg2: #ffffff; --bg3: #e8eaed;
+  --border: #c8d0db; --fg: #1a1d23; --fg2: #5a6478;
+  --sel: #d0e8ff; --accent: #0078d4; --green: #107c10;
+  --yellow: #b5800a; --red: #c42b1c;
+}
+
+/* ── Live badge ──────────────────────────────────────────────────────────── */
+.live-badge { font-size: 10px; color: var(--green); font-weight: 700; animation: live-pulse 1.5s infinite; }
+.live-badge.hidden { display: none !important; }
+@keyframes live-pulse { 0%,100% { opacity:1; } 50% { opacity:.3; } }
+
+/* ── Sweep section ───────────────────────────────────────────────────────── */
+.sweep-section { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 8px; }
+.sweep-section.hidden { display: none; }
+
+/* ── Compare log list ────────────────────────────────────────────────────── */
+.compare-list { margin-top: 6px; }
+.comp-item { display: flex; align-items: center; gap: 6px; padding: 2px 0; font-size: 11px; color: var(--fg); }
+.comp-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.comp-item > span:nth-child(2) { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── History modal ───────────────────────────────────────────────────────── */
+.history-box { width: 680px; }
+.history-list { max-height: 420px; overflow-y: auto; border: 1px solid var(--border); border-radius: 5px; }
+.history-item {
+  display: grid; grid-template-columns: 112px 1fr 56px;
+  gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border);
+  cursor: pointer; align-items: center; font-size: 12px;
+}
+.history-item:hover { background: var(--sel); }
+.history-item:last-child { border-bottom: none; }
+.history-time { font-family: monospace; font-size: 10px; color: var(--fg2); }
+.history-name { color: var(--fg); font-weight: 600; margin-bottom: 2px; }
+.history-cmd  { font-size: 10px; color: var(--fg2); font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.history-rc-ok   { color: var(--green); font-weight: 700; text-align: center; }
+.history-rc-fail { color: var(--red);   font-weight: 700; text-align: center; }
+.history-rc-run  { color: var(--yellow); text-align: center; }
+
+/* ── Drag-and-drop ───────────────────────────────────────────────────────── */
+.file-tree.drag-over { background: #0a1a30; outline: 2px dashed var(--accent); outline-offset: -4px; }
 
 /* Scrollbars */
 ::-webkit-scrollbar { width: 6px; height: 6px; }

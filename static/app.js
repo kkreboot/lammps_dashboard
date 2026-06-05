@@ -20,6 +20,8 @@ let selectedProfile   = null;
 let hpcModules    = [];
 let hpcSelectedRow    = null;   // {id, name, workdir}
 let logLineCount  = 0;
+let _compLogs        = [];
+let _livePlotTimeout = null;
 
 const CHART_COLORS = [
   '#4fc3f7','#81c784','#ffd54f','#ef5350',
@@ -295,6 +297,35 @@ document.getElementById('btn-ssh-download-file').addEventListener('click', () =>
   document.addEventListener('mouseup', () => { drag=false; document.body.style.cursor=''; });
 })();
 
+// Drag-and-drop file upload on file tree
+(function() {
+  const tree = document.getElementById('file-tree');
+  tree.addEventListener('dragover', e => { e.preventDefault(); tree.classList.add('drag-over'); });
+  tree.addEventListener('dragleave', () => tree.classList.remove('drag-over'));
+  tree.addEventListener('drop', async e => {
+    e.preventDefault();
+    tree.classList.remove('drag-over');
+    const files = Array.from(e.dataTransfer.files);
+    if (!files.length) return;
+    const remote = document.getElementById('path-bar').value.startsWith('[SSH]');
+    for (const file of files) {
+      const dest = currentDir.replace(/\/$/, '') + '/' + file.name;
+      if (remote) {
+        await uploadFileToRemote(file, dest);
+      } else {
+        await new Promise((res, rej) => {
+          const reader = new FileReader();
+          reader.onload  = async ev => { await POST('/api/file', { path: dest, content: ev.target.result }); res(); };
+          reader.onerror = rej;
+          reader.readAsText(file);
+        }).catch(err => alert('Upload failed: ' + err));
+      }
+    }
+    toast(`Uploaded ${files.length} file(s)`);
+    loadDir(currentDir, remote);
+  });
+})();
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Run tab
 // ═══════════════════════════════════════════════════════════════════════════
@@ -366,6 +397,85 @@ document.getElementById('btn-detect-bin').addEventListener('click', async () => 
   }
 });
 
+// ── Variable sweep ────────────────────────────────────────────────────────
+document.getElementById('btn-sweep-toggle').addEventListener('click', () => {
+  document.getElementById('sweep-section').classList.toggle('hidden');
+});
+
+document.getElementById('btn-run-sweep').addEventListener('click', async () => {
+  const varName = document.getElementById('sweep-var').value.trim();
+  const vals    = document.getElementById('sweep-vals').value.trim().split(/\s+/).filter(Boolean);
+  if (!varName || !vals.length) { alert('Enter a variable name and at least one value.'); return; }
+  const inp    = document.getElementById('run-input').value.trim();
+  const dir    = document.getElementById('run-dir').value.trim();
+  const np     = document.getElementById('run-np').value;
+  const bin    = document.getElementById('run-bin').value.trim();
+  const base   = document.getElementById('run-extra').value.trim();
+  const remote = document.getElementById('run-remote').checked;
+  if (!inp) { alert('Enter an input file name'); return; }
+  const prog = document.getElementById('sweep-progress');
+  prog.classList.remove('hidden');
+  for (let i = 0; i < vals.length; i++) {
+    const val   = vals[i];
+    const extra = [base, `-var ${varName} ${val}`].filter(Boolean).join(' ');
+    prog.textContent = `⚡ Sweep ${i+1}/${vals.length}: ${varName}=${val}`;
+    prog.style.color = 'var(--yellow)';
+    appendLog(`⚡ Sweep ${i+1}/${vals.length}: -var ${varName} ${val}`, 'log-ok');
+    const d = await POST('/api/run', { input_file:inp, working_dir:dir, np, lmp_bin:bin, extra_args:extra, remote });
+    if (d.error) { prog.style.color='var(--red)'; prog.textContent='✗ '+d.error; break; }
+    if (d.working_dir) _state_wd = d.working_dir;
+    setRunning(true);
+    await new Promise(resolve => {
+      function h(st) { if (!st.running) { socket.off('status', h); resolve(); } }
+      socket.on('status', h);
+    });
+  }
+  prog.textContent = `✔ Sweep done: ${vals.length} run(s)`;
+  prog.style.color = 'var(--green)';
+  appendLog(`✔ Sweep complete — ${vals.length} run(s) of ${varName}`, 'log-ok');
+});
+
+// ── Run history ───────────────────────────────────────────────────────────
+document.getElementById('btn-run-history').addEventListener('click', async () => {
+  const d    = await GET('/api/jobs');
+  const list = document.getElementById('history-list');
+  if (!d.jobs || !d.jobs.length) {
+    list.innerHTML = '<div style="padding:20px;color:var(--fg2);text-align:center">No runs yet.</div>';
+  } else {
+    list.innerHTML = d.jobs.map((j, idx) =>
+      `<div class="history-item" data-idx="${idx}">
+        <span class="history-time">${esc(j.start)}</span>
+        <div>
+          <div class="history-name">${esc(j.input_file.split('/').pop())}</div>
+          <div class="history-cmd">${esc(j.working_dir)}</div>
+        </div>
+        <span class="${j.status==='running'?'history-rc-run':j.returncode===0?'history-rc-ok':'history-rc-fail'}">
+          ${j.status==='running'?'● Run':j.returncode===0?'✔':'✗ '+j.returncode}
+        </span>
+      </div>`
+    ).join('');
+    list.querySelectorAll('.history-item').forEach((el, idx) => {
+      el.addEventListener('click', () => {
+        const j = d.jobs[idx];
+        document.getElementById('run-dir').value   = j.working_dir || '';
+        document.getElementById('run-input').value = j.input_file.split('/').pop();
+        document.getElementById('history-overlay').classList.add('hidden');
+        document.querySelector('[data-tab=run]').click();
+        toast('Loaded from history');
+      });
+    });
+  }
+  document.getElementById('history-overlay').classList.remove('hidden');
+});
+document.getElementById('btn-history-close').addEventListener('click', () =>
+  document.getElementById('history-overlay').classList.add('hidden'));
+document.getElementById('btn-history-clear').addEventListener('click', async () => {
+  if (!confirm('Clear all run history?')) return;
+  await fetch('/api/jobs', { method: 'DELETE' });
+  document.getElementById('history-overlay').classList.add('hidden');
+  toast('History cleared.');
+});
+
 function setRunning(on) {
   document.getElementById('btn-run').disabled  = on;
   document.getElementById('btn-stop').disabled = !on;
@@ -410,6 +520,9 @@ socket.on('status', d => {
   if (!d.running) {
     const ok = d.returncode === 0;
     appendLog(`⬛ Finished — exit code: ${d.returncode}`, ok ? 'log-ok' : 'log-err');
+    notifySimDone(d.returncode);
+    document.getElementById('plot-live-badge').classList.add('hidden');
+    if (_livePlotTimeout) { clearTimeout(_livePlotTimeout); _livePlotTimeout = null; }
   }
 });
 
@@ -418,6 +531,22 @@ socket.on('thermo_ready', d => {
   buildColCheckboxes(d.headers);
   appendLog('📊 Thermo data ready — switching to Plots tab…', 'log-ok');
   setTimeout(() => document.querySelector('[data-tab=plots]').click(), 800);
+});
+
+socket.on('thermo_live', d => {
+  if (!thermoData || !thermoData.headers.length ||
+      thermoData.headers.join() !== d.headers.join()) {
+    thermoData = { headers: d.headers, data: Object.fromEntries(d.headers.map(h => [h, []])) };
+    buildColCheckboxes(d.headers);
+  }
+  d.headers.forEach(h => { if (thermoData.data[h]) thermoData.data[h].push(d.row[h]); });
+  document.getElementById('plot-live-badge').classList.remove('hidden');
+  if (!_livePlotTimeout) {
+    _livePlotTimeout = setTimeout(() => {
+      _livePlotTimeout = null;
+      if (subplotCharts.length) updateLiveCharts();
+    }, 2000);
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -458,8 +587,12 @@ document.getElementById('btn-plot').addEventListener('click', () => {
     }
   });
   if (!yKeys.length) { alert('Select at least one column.'); return; }
-  const layout = document.getElementById('plot-layout').value;
-  renderPlots(thermoData, xKey, yKeys, layout);
+  if (_compLogs.length > 0) {
+    renderComparisonPlots(xKey, yKeys);
+  } else {
+    const layout = document.getElementById('plot-layout').value;
+    renderPlots(thermoData, xKey, yKeys, layout);
+  }
 });
 
 document.getElementById('btn-load-log').addEventListener('click', async () => {
@@ -546,6 +679,83 @@ function chartOptions(xLabel, yLabel) {
            ticks:{ color:'#8a9ab0' }, grid:{ color:'#2d3139' } },
     },
   };
+}
+
+function updateLiveCharts() {
+  if (!thermoData || !subplotCharts.length) return;
+  const xKey  = document.getElementById('plot-x').value;
+  const xVals = thermoData.data[xKey] || [];
+  subplotCharts.forEach(ch => {
+    ch.data.datasets.forEach(ds => {
+      const key = ds.label.replace(/ \[.*\]$/, '');
+      const ys  = thermoData.data[key] || [];
+      ds.data = ys.map((v, i) => ({ x: xVals[i], y: v }));
+    });
+    ch.update('none');
+  });
+}
+
+function renderComparisonPlots(xKey, yKeys) {
+  const grid = document.getElementById('subplot-grid');
+  subplotCharts.forEach(ch => ch.destroy());
+  subplotCharts = [];
+  grid.innerHTML = '';
+  document.getElementById('no-plot-msg').style.display = 'none';
+  const allLogs = [];
+  if (thermoData) allLogs.push({ label: 'current', ...thermoData });
+  _compLogs.forEach(l => allLogs.push(l));
+  const n = yKeys.length;
+  grid.style.gridTemplateColumns = n <= 1 ? '1fr' : n <= 4 ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)';
+  yKeys.forEach(({ key }) => {
+    const cell = document.createElement('div');
+    cell.className = 'subplot-cell';
+    const canvas = document.createElement('canvas');
+    cell.appendChild(canvas); grid.appendChild(cell);
+    const datasets = allLogs.map((log, li) => {
+      const xVals = log.data[xKey] || [];
+      const ys    = log.data[key]  || [];
+      return {
+        label: `${key} [${log.label}]`,
+        data: ys.map((v, i) => ({ x: xVals[i], y: v })),
+        borderColor: CHART_COLORS[li % CHART_COLORS.length],
+        backgroundColor: CHART_COLORS[li % CHART_COLORS.length] + '22',
+        borderWidth: 1.5, pointRadius: xVals.length > 500 ? 0 : 2, tension: 0.1,
+      };
+    }).filter(ds => ds.data.length > 0);
+    subplotCharts.push(new Chart(canvas, {
+      type: 'line', data: { datasets },
+      options: chartOptions(xKey, key),
+    }));
+  });
+}
+
+document.getElementById('btn-compare-log').addEventListener('click', async () => {
+  const path   = document.getElementById('plot-log-path').value.trim() || 'log.lammps';
+  const remote = sshConnected && document.getElementById('run-remote').checked;
+  const d = await GET(`/api/parse_log?path=${enc(path)}&remote=${remote}`);
+  if (d.error) { alert(d.error); return; }
+  if (!d.headers || !d.headers.length) { alert('No thermo data found.'); return; }
+  const raw   = path.split('/').pop();
+  const label = raw.replace(/\.lammps$|\.log$/, '') || 'run' + (_compLogs.length + 1);
+  _compLogs.push({ label, headers: d.headers, data: d.data });
+  renderCompareList();
+  toast('Added to comparison: ' + label);
+});
+
+function renderCompareList() {
+  const list = document.getElementById('compare-logs-list');
+  if (!_compLogs.length) { list.innerHTML = ''; return; }
+  list.innerHTML = '<div style="font-size:10px;color:var(--fg2);margin:4px 0">Comparison logs:</div>' +
+    _compLogs.map((l, i) =>
+      `<div class="comp-item">
+        <span class="comp-dot" style="background:${CHART_COLORS[i % CHART_COLORS.length]}"></span>
+        <span>${esc(l.label)}</span>
+        <button class="btn-small comp-del" data-i="${i}">×</button>
+      </div>`
+    ).join('');
+  list.querySelectorAll('.comp-del').forEach(btn =>
+    btn.addEventListener('click', () => { _compLogs.splice(+btn.dataset.i, 1); renderCompareList(); })
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -888,6 +1098,16 @@ function applyHpcConfig(c) {
   document.querySelectorAll('.mail-chk').forEach(ch => ch.checked=(c.mail_types||[]).includes(ch.value));
   hpcModules = c.modules || []; renderModules();
 }
+
+// HPC queue auto-refresh
+let _hpcRefreshTimer = null;
+document.getElementById('hpc-auto-refresh').addEventListener('change', e => {
+  clearInterval(_hpcRefreshTimer); _hpcRefreshTimer = null;
+  if (e.target.checked) {
+    _hpcRefreshTimer = setInterval(() => { if (sshConnected) refreshQueue(); }, 30000);
+    if (sshConnected) refreshQueue();
+  }
+});
 
 // Auto-detect HPC when SSH connects
 const HPC_KEYWORDS = ['hpc','cluster','slurm','login','hpclogin','iitj','iiser','iisc','supercomp'];
@@ -1264,9 +1484,51 @@ function toast(msg, ms = 2200) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Theme toggle
+// ═══════════════════════════════════════════════════════════════════════════
+document.getElementById('btn-theme').addEventListener('click', () => {
+  document.body.classList.toggle('light-theme');
+  const light = document.body.classList.contains('light-theme');
+  document.getElementById('btn-theme').textContent = light ? '🌑' : '🌙';
+  localStorage.setItem('lammps_theme', light ? 'light' : 'dark');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Browser notifications
+// ═══════════════════════════════════════════════════════════════════════════
+function notifySimDone(rc) {
+  if (rc == null || !('Notification' in window) || Notification.permission !== 'granted') return;
+  const n = new Notification('LAMMPS Dashboard', {
+    body: rc === 0 ? 'Simulation finished successfully ✔' : `Simulation failed (exit ${rc})`,
+  });
+  setTimeout(() => n.close(), 5000);
+}
+
+document.getElementById('btn-notif').addEventListener('click', async () => {
+  if (!('Notification' in window)) { alert('Browser notifications not supported.'); return; }
+  const perm = await Notification.requestPermission();
+  document.getElementById('btn-notif').textContent = perm === 'granted' ? '🔔' : '🔕';
+  if (perm === 'granted') toast('Notifications enabled.');
+  else toast('Notifications blocked.');
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Init
 // ═══════════════════════════════════════════════════════════════════════════
 (async function init() {
+  // Apply saved theme
+  if (localStorage.getItem('lammps_theme') === 'light') {
+    document.body.classList.add('light-theme');
+    document.getElementById('btn-theme').textContent = '🌑';
+  }
+  // Sync notification button
+  if ('Notification' in window) {
+    document.getElementById('btn-notif').textContent =
+      Notification.permission === 'granted' ? '🔔' : '🔕';
+  } else {
+    document.getElementById('btn-notif').style.display = 'none';
+  }
+
   try { initEditor(); } catch (e) { console.error('Editor init failed:', e); }
   const st = await GET('/api/status').catch(() => ({}));
   const wd = st.working_dir || '';

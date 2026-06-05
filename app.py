@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """LAMMPS Dashboard — Flask/SocketIO web backend (full feature parity with desktop GUI)."""
 
-import os, re, signal, threading, subprocess, json, time, select, struct
+import os, re, signal, threading, subprocess, json, time, select, struct, datetime
 from pathlib import Path
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit
@@ -15,6 +15,26 @@ _state = {"process": None, "running": False, "working_dir": os.path.expanduser("
 _ai_stop   = threading.Event()
 _pull_stop = threading.Event()
 _ai_history: list = []
+_job_history: list = []
+_JOB_HISTORY_FILE = os.path.expanduser("~/.lammps_dashboard_jobs.json")
+
+def _load_job_history():
+    global _job_history
+    try:
+        if os.path.exists(_JOB_HISTORY_FILE):
+            with open(_JOB_HISTORY_FILE) as f:
+                _job_history = json.load(f)
+    except Exception:
+        _job_history = []
+
+def _save_job_history():
+    try:
+        with open(_JOB_HISTORY_FILE, "w") as f:
+            json.dump(_job_history[-100:], f)
+    except Exception:
+        pass
+
+_load_job_history()
 
 # ── Terminal state ────────────────────────────────────────────────────────────
 _term = {"active": False, "master": None, "proc": None, "channel": None}
@@ -278,11 +298,35 @@ def run_simulation():
 
     if remote and HAS_SSH and _ssh and _ssh.connected:
         def _run_remote():
+            job = {"id": str(int(time.time())), "input_file": inp_abs, "working_dir": wdir,
+                   "cmd": cmd, "start": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                   "status": "running", "returncode": None}
+            _job_history.append(job); _save_job_history()
             _state["running"] = True
             socketio.emit("status", {"running": True, "cmd": cmd, "remote": True})
-            def on_line(line): socketio.emit("log_line", {"line": line})
+            _lv_hdrs = []; _lv_in = [False]
+            def on_line(line):
+                socketio.emit("log_line", {"line": line})
+                s = line.strip()
+                if re.match(r"^Step\b", s):
+                    _lv_hdrs[:] = s.split(); _lv_in[0] = True
+                elif _lv_in[0]:
+                    if s.startswith("Loop time") or s.startswith("ERROR"):
+                        _lv_in[0] = False
+                    else:
+                        parts = s.split()
+                        if parts:
+                            try:
+                                vals = [float(v) for v in parts]
+                                if len(vals) == len(_lv_hdrs):
+                                    socketio.emit("thermo_live", {
+                                        "headers": list(_lv_hdrs),
+                                        "row": dict(zip(_lv_hdrs, vals))})
+                            except ValueError: pass
             def on_done(rc):
                 _state["running"] = False
+                job["status"] = "done" if rc == 0 else "failed"
+                job["returncode"] = rc; _save_job_history()
                 socketio.emit("status", {"running": False, "returncode": rc})
                 try:
                     content = _ssh.read_file(wdir.rstrip("/") + "/log.lammps")
@@ -295,25 +339,49 @@ def run_simulation():
                 _ssh.exec_stream(cmd, cwd=wdir, on_line=on_line, on_done=on_done)
             except Exception as exc:
                 _state["running"] = False
+                job["status"] = "failed"; job["returncode"] = -1; _save_job_history()
                 socketio.emit("log_line", {"line": f"[ERROR] {exc}"})
                 socketio.emit("status", {"running": False, "returncode": -1})
         threading.Thread(target=_run_remote, daemon=True).start()
     else:
         def _run_local():
+            job = {"id": str(int(time.time())), "input_file": inp_abs, "working_dir": wdir,
+                   "cmd": cmd, "start": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                   "status": "running", "returncode": None}
+            _job_history.append(job); _save_job_history()
             try:
                 _env = os.environ.copy()
-                _env.pop("DISPLAY", None)  # suppress spurious X11 warnings from MPI
+                _env.pop("DISPLAY", None)
                 proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT, cwd=wdir, text=True, bufsize=1,
                     preexec_fn=os.setsid, env=_env)
                 _state["process"] = proc
                 _state["running"] = True
                 socketio.emit("status", {"running": True, "pid": proc.pid, "cmd": cmd})
-                for line in iter(proc.stdout.readline, ""):
-                    socketio.emit("log_line", {"line": line.rstrip()})
+                _lv_hdrs = []; _lv_in = False
+                for raw in iter(proc.stdout.readline, ""):
+                    line = raw.rstrip()
+                    socketio.emit("log_line", {"line": line})
+                    s = line.strip()
+                    if re.match(r"^Step\b", s):
+                        _lv_hdrs = s.split(); _lv_in = True
+                    elif _lv_in:
+                        if s.startswith("Loop time") or s.startswith("ERROR"):
+                            _lv_in = False
+                        else:
+                            parts = s.split()
+                            if parts:
+                                try:
+                                    vals = [float(v) for v in parts]
+                                    if len(vals) == len(_lv_hdrs):
+                                        socketio.emit("thermo_live", {
+                                            "headers": _lv_hdrs,
+                                            "row": dict(zip(_lv_hdrs, vals))})
+                                except ValueError: pass
                 proc.wait()
-                _state["running"] = False
-                _state["process"] = None
+                _state["running"] = False; _state["process"] = None
+                job["status"] = "done" if proc.returncode == 0 else "failed"
+                job["returncode"] = proc.returncode; _save_job_history()
                 socketio.emit("status", {"running": False, "returncode": proc.returncode})
                 log_path = os.path.join(wdir, "log.lammps")
                 if os.path.exists(log_path):
@@ -321,8 +389,8 @@ def run_simulation():
                     if t["headers"]:
                         socketio.emit("thermo_ready", t)
             except Exception as exc:
-                _state["running"] = False
-                _state["process"] = None
+                _state["running"] = False; _state["process"] = None
+                job["status"] = "failed"; job["returncode"] = -1; _save_job_history()
                 socketio.emit("status", {"running": False, "returncode": -1})
                 socketio.emit("log_line", {"line": f"[ERROR] {exc}"})
         threading.Thread(target=_run_local, daemon=True).start()
@@ -726,6 +794,21 @@ def on_ai_pull(data):
 @socketio.on("pull_stop")
 def on_pull_stop(data):
     _pull_stop.set()
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Job history
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route("/api/jobs")
+def get_jobs():
+    return jsonify({"jobs": list(reversed(_job_history[-50:]))})
+
+@app.route("/api/jobs", methods=["DELETE"])
+def clear_jobs():
+    global _job_history
+    _job_history = []
+    _save_job_history()
+    return jsonify({"ok": True})
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Terminal (PTY)
