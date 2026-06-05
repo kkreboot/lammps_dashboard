@@ -1,0 +1,26 @@
+# ── AI model files (18 GB — too large for GitHub) ────────────────────────────
+ollama_models/
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+*.egg-info/
+
+# ── Local config (SSH profiles contain hostnames / paths) ─────────────────────
+# These live in ~/.lammps_dashboard/ — not in the repo
+hpc_config.json
+ssh_profiles.json
+
+# ── Build / temp ──────────────────────────────────────────────────────────────
+*.log
+*.tmp
+dist/
+build/
+
+# ── Flask legacy (not needed for desktop app) ─────────────────────────────────
+static/
+templates/
+app.py
