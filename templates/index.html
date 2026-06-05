@@ -28,7 +28,6 @@
     <button class="tab-btn" data-tab="ssh">🔌 SSH</button>
     <button class="tab-btn" data-tab="hpc">🖥 HPC</button>
     <button class="tab-btn" data-tab="ai">🤖 AI</button>
-    <button class="tab-btn" data-tab="term">⬛ Terminal</button>
   </nav>
   <div id="conn-badge" class="badge badge-off">⬤ Local</div>
 </header>
@@ -68,48 +67,65 @@
 
 <!-- ══════════ RUN ══════════ -->
 <section id="tab-run" class="tab-panel hidden">
-  <div class="run-layout">
-    <div class="card run-controls">
-      <h3>Simulation Controls</h3>
-      <div id="run-target-bar" class="run-target-bar">▶ Run target: 💻 Local machine</div>
-      <label>Input file
-        <div class="input-row">
-          <input id="run-input" type="text" placeholder="in.lammps"/>
-          <button id="btn-browse-input">Browse</button>
-        </div>
-      </label>
-      <label>Working directory
-        <div class="input-row">
-          <input id="run-dir" type="text" placeholder="/path/to/sim"/>
-          <button id="btn-browse-dir">Browse</button>
-        </div>
-      </label>
-      <div class="row2">
-        <label>MPI procs <input id="run-np" type="number" value="4" min="1"/></label>
-        <label>Binary
-          <div class="input-row" style="margin-top:3px">
-            <input id="run-bin" type="text" value="lmp"/>
-            <button id="btn-detect-bin" title="Auto-detect lmp binary">Detect</button>
+  <div class="run-outer">
+    <div class="run-layout">
+      <div class="card run-controls">
+        <h3>Simulation Controls</h3>
+        <div id="run-target-bar" class="run-target-bar">▶ Run target: 💻 Local machine</div>
+        <label>Input file
+          <div class="input-row">
+            <input id="run-input" type="text" placeholder="in.lammps"/>
+            <button id="btn-browse-input">Browse</button>
           </div>
         </label>
+        <label>Working directory
+          <div class="input-row">
+            <input id="run-dir" type="text" placeholder="/path/to/sim"/>
+            <button id="btn-browse-dir">Browse</button>
+          </div>
+        </label>
+        <div class="row2">
+          <label>MPI procs <input id="run-np" type="number" value="4" min="1"/></label>
+          <label>Binary
+            <div class="input-row" style="margin-top:3px">
+              <input id="run-bin" type="text" value="lmp"/>
+              <button id="btn-detect-bin" title="Auto-detect lmp binary">Detect</button>
+            </div>
+          </label>
+        </div>
+        <label>Extra args <input id="run-extra" type="text" placeholder="-var T 300"/></label>
+        <label class="chk-label"><input id="run-remote" type="checkbox"/> Run on SSH server</label>
+        <div class="btn-row" style="margin-top:12px">
+          <button id="btn-run" class="btn-green">▶ Run</button>
+          <button id="btn-stop" class="btn-red" disabled>⬛ Stop</button>
+          <button id="btn-parse-log">📊 Parse Log</button>
+        </div>
+        <div id="run-status" class="status-bar">Idle</div>
       </div>
-      <label>Extra args <input id="run-extra" type="text" placeholder="-var T 300"/></label>
-      <label class="chk-label"><input id="run-remote" type="checkbox"/> Run on SSH server</label>
-      <div class="btn-row" style="margin-top:12px">
-        <button id="btn-run" class="btn-green">▶ Run</button>
-        <button id="btn-stop" class="btn-red" disabled>⬛ Stop</button>
-        <button id="btn-parse-log">📊 Parse Log</button>
+      <div class="card log-card">
+        <div class="card-header">
+          <span>Output Log</span>
+          <span id="log-count" style="font-size:10px;color:var(--fg2)">0 lines</span>
+          <button id="btn-clear-log" class="btn-small">Clear</button>
+          <label class="chk-label" style="font-size:11px"><input id="log-autoscroll" type="checkbox" checked/> Auto-scroll</label>
+        </div>
+        <div id="log-view" class="log-view"></div>
       </div>
-      <div id="run-status" class="status-bar">Idle</div>
     </div>
-    <div class="card log-card">
-      <div class="card-header">
-        <span>Output Log</span>
-        <span id="log-count" style="font-size:10px;color:var(--fg2)">0 lines</span>
-        <button id="btn-clear-log" class="btn-small">Clear</button>
-        <label class="chk-label" style="font-size:11px"><input id="log-autoscroll" type="checkbox" checked/> Auto-scroll</label>
+    <div class="run-term-section">
+      <div class="term-toolbar">
+        <span id="term-status" class="status-label">● Disconnected</span>
+        <div class="sep"></div>
+        <label class="chk-label">
+          <input id="term-remote-chk" type="checkbox"/>
+          SSH remote
+        </label>
+        <button id="btn-term-connect" class="btn-green">⬛ Open Terminal</button>
+        <button id="btn-term-disconnect" class="btn-red" disabled>✕ Close</button>
+        <div style="flex:1"></div>
+        <button id="btn-term-clear" class="btn-small">Clear</button>
       </div>
-      <div id="log-view" class="log-view"></div>
+      <div id="terminal-container" class="terminal-container"></div>
     </div>
   </div>
 </section>
@@ -340,24 +356,6 @@
   </div>
 </section>
 
-<!-- ══════════ TERMINAL ══════════ -->
-<section id="tab-term" class="tab-panel hidden">
-  <div class="term-layout">
-    <div class="term-toolbar">
-      <span id="term-status" class="status-label">● Disconnected</span>
-      <div class="sep"></div>
-      <label class="chk-label">
-        <input id="term-remote-chk" type="checkbox"/>
-        SSH remote
-      </label>
-      <button id="btn-term-connect" class="btn-green">⬛ Open Terminal</button>
-      <button id="btn-term-disconnect" class="btn-red" disabled>✕ Close</button>
-      <div style="flex:1"></div>
-      <button id="btn-term-clear" class="btn-small">Clear</button>
-    </div>
-    <div id="terminal-container" class="terminal-container"></div>
-  </div>
-</section>
 
 </main>
 

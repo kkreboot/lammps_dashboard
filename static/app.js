@@ -1193,14 +1193,11 @@ document.getElementById('btn-term-clear').addEventListener('click', () => {
   if (_term) _term.clear();
 });
 
-// auto-open terminal when tab is switched
+// re-fit terminal when run tab becomes visible
 document.querySelectorAll('.tab-btn').forEach(btn => {
-  if (btn.dataset.tab === 'term') {
+  if (btn.dataset.tab === 'run') {
     btn.addEventListener('click', () => {
-      // slight delay so the tab panel is visible before fit()
-      setTimeout(() => {
-        if (_term && _termFit) _termFit.fit();
-      }, 80);
+      setTimeout(() => { if (_term && _termFit) _termFit.fit(); }, 80);
     });
   }
 });
